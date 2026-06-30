@@ -1,0 +1,176 @@
+#include <windows.h>      // Needed for Windows systems
+#include <GL/glut.h>      // Include the GLUT library (OpenGL Utility Toolkit)
+
+GLfloat i = 0.0f;         // A variable to control rotation angle
+
+// Initialize OpenGL settings
+void initGL()
+{
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f); // Set background color to black
+}
+
+// This function runs when the system is idle (not processing input). It is used to continuously update the screen.
+void Idle()
+{
+    glutPostRedisplay();  // Request to redraw the window
+}
+
+// The main drawing function
+void display()
+{
+    glClear(GL_COLOR_BUFFER_BIT); // Clear the color buffer
+    glLoadIdentity();             // Reset the current matrix (start fresh)
+
+    glPushMatrix();               // Save current transformation matrix (start new transformation)
+
+    glRotatef(i, 0.0, 0.0, 1.0);  // Rotate by 'i' degrees. i is the angle Because i is changing over time.
+    //in 2D rotation, the object lies in the XY-plane, and rotation happens around the Z-axis.
+
+    glLineWidth(2.5f);
+     //CREATE LINE
+    glBegin(GL_LINES);
+
+
+    glColor3f(0.0f, 1.0f, 1.0f);
+
+
+    glVertex2f(0.0f, 0.3f);
+    glVertex2f(0.0f, 0.38f);
+
+
+    glVertex2f(0.0f, 0.3f);
+    glVertex2f(0.063f, 0.346f);
+
+
+    glVertex2f(0.0f, 0.3f);
+    glVertex2f(-0.064f, 0.349f);
+
+    // A to B
+
+    glVertex2f(0.0f, 0.3f);
+    glVertex2f(0.0f, -0.3f);
+
+    // B to K
+
+    glVertex2f(0.0f, -0.3f);
+    glVertex2f(0.0f, -0.4f);
+
+    // B to L
+
+    glVertex2f(0.0f, -0.3f);
+    glVertex2f(-0.084f, -0.345f);
+
+    // B to M
+
+    glVertex2f(0.0f, -0.3f);
+    glVertex2f(0.086f, -0.349f);
+
+    // CENTER to N
+
+    glVertex2f(0.0f, 0.0f);
+    glVertex2f(0.349f, -0.13f);
+
+    // N to Q
+
+    glVertex2f(0.349f, -0.13f);
+    glVertex2f(0.42f, -0.12f);
+
+
+    // N to O
+
+    glVertex2f(0.349f, -0.13f);
+    glVertex2f(0.43f, -0.18f);
+
+    // N to P
+
+    glVertex2f(0.349f, -0.13f);
+    glVertex2f(0.346f, -0.206f);
+
+
+    // CENTER to E
+
+    glVertex2f(0.0f, 0.0f);
+    glVertex2f(0.299f, 0.200f);
+
+    // E TO F
+
+    glVertex2f(0.299f, 0.2f);
+    glVertex2f(0.299f, 0.257f);
+
+    // E TO D
+
+    glVertex2f(0.299f, 0.2f);
+    glVertex2f(0.357f, 0.238f);
+
+    // E TO G
+
+    glVertex2f(0.299f, 0.2f);
+    glVertex2f(0.37f, 0.188f);
+
+
+    // CENTER to R
+
+    glVertex2f(0.0f, 0.0f);
+    glVertex2f(-0.3f, 0.2f);
+
+    // R TO U
+
+    glVertex2f(-0.3f, 0.2f);
+    glVertex2f(-0.297f, 0.274f);
+
+    // R TO T
+
+    glVertex2f(-0.3f, 0.2f);
+    glVertex2f(-0.382f, 0.164f);
+
+    // R TO S
+
+    glVertex2f(-0.3f, 0.2f);
+    glVertex2f(-0.372f, 0.246f);
+
+    // CENTER to V
+
+    glVertex2f(0.0f, 0.0f);
+    glVertex2f(-0.357f, -0.146f);
+
+    // V TO W
+
+    glVertex2f(-0.357f, -0.146f);
+    glVertex2f(-0.42f, -0.197f);
+
+    // V TO A1
+
+    glVertex2f(-0.357f, -0.146f);
+    glVertex2f(-0.432f, -0.13f);
+
+    // V TO Z
+
+    glVertex2f(-0.357f, -0.146f);
+    glVertex2f(-0.34f, -0.224f);
+
+
+
+    glEnd();
+
+
+
+
+    glPopMatrix();             // Restore the original/previous matrix (before transformation)
+
+    i -= 0.03f;                 // Slowly increase rotation angle
+
+    glFlush();                 // Show the drawing
+}
+
+// Main function - program starts here
+int main(int argc, char** argv)
+{
+    glutInit(&argc, argv);              // Initialize GLUT
+    glutInitWindowSize(320, 320);       // Set window size (width x height)
+    glutCreateWindow("Model Transform-Rotation - House"); // Create a window with a title
+    glutDisplayFunc(display);           // Tell GLUT to use the 'display' function to draw
+    initGL();                           // Call the initialization function
+    glutIdleFunc(Idle);                 // Tell GLUT to call 'Idle' when there's nothing else to do
+    glutMainLoop();                     // Enter the main event loop (keeps app running)
+    return 0;                           // End of program
+}
