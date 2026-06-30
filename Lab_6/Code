@@ -1,0 +1,78 @@
+#include <windows.h>
+#include <iostream>
+#include <cmath>
+#include <GL/gl.h>
+#include <GL/glut.h>
+
+using namespace std;
+
+// global variable
+int X1, Y1, X2, Y2;
+
+void DDA()
+{
+glClear(GL_COLOR_BUFFER_BIT); // Clear the display window
+glColor3f(0.0f, 0.0f, 0.0f); // black colour line
+glPointSize(3.0); // Set the size of each plotted point
+glBegin(GL_POINTS); // Start drawing points in OpenGL
+
+float dx = X2 - X1;
+float dy = Y2 - Y1;
+float m = dy / dx;
+
+float x = X1;
+float y = Y1;
+
+if (abs(m) <= 1)
+{
+
+while (x <= X2)
+{
+glVertex2d(round(x), round(y));
+x = x + 1;
+y = y + m;
+}
+}
+else
+{
+
+while (y <= Y2)
+{
+glVertex2d(round(x), round(y));
+y = y + 1;
+x = x + (1 / m);
+}
+}
+
+glEnd();
+glFlush();
+}
+
+void myInit()
+{
+glClearColor(1.0, 1.0, 1.0, 0.0); // white background
+
+glMatrixMode(GL_PROJECTION);
+glLoadIdentity();
+gluOrtho2D(0.0, 640.0, 0.0, 480.0);
+}
+
+int main(int argc, char** argv)
+{
+cout << "Enter starting point (X1 Y1): ";
+cin >> X1 >> Y1;
+cout << "Enter ending point (X2 Y2): ";
+cin >> X2 >> Y2;
+
+glutInit(&argc, argv);
+glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB);
+glutInitWindowSize(640, 480);
+glutInitWindowPosition(100, 150);
+glutCreateWindow("DDA Algorithm");
+
+myInit();
+glutDisplayFunc(DDA);
+glutMainLoop();
+
+return 0;
+}
