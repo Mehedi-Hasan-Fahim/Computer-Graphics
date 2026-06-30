@@ -1,0 +1,101 @@
+#include <windows.h>
+#include <GL/glut.h>
+
+GLfloat angle = 0.0f; // Rotation angle
+
+void initGL() {
+    glClearColor(0, 0, 0, 1);     // Background black
+    glEnable(GL_DEPTH_TEST);      // Enable depth test
+}
+
+// Display function
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear old screen + depth.
+                                                        //Otherwise previous frames remain.
+    glLoadIdentity();                                   // Reset view
+    // Move cube back so we can see it.
+    //Because camera is near origin. Without moving back: cube too close, cannot see properly
+    glTranslatef(0.0f, 0.0f, -6.0f);
+    // Rotate cube, It may look like X-axis rotation visually, but mathematically it is rotating
+    //around the Y-axis because:
+    glRotatef(angle, 1.0f, 1.0f, 0.0f);
+    // Draw cube
+    glBegin(GL_TRIANGLES);
+
+        // Front - Red
+         glColor3f(1, 0, 0);
+        glVertex3f( 0,  1,  0);   // Top
+        glVertex3f(-1, -1,  1);   // Left
+        glVertex3f( 1, -1,  1);   // Right
+
+        // Right Face - Green
+        glColor3f(0, 1, 0);
+        glVertex3f( 0,  1,  0);
+        glVertex3f( 1, -1,  1);
+        glVertex3f( 1, -1, -1);
+
+        // Back Face - Blue
+        glColor3f(0, 0, 1);
+        glVertex3f( 0,  1,  0);
+        glVertex3f( 1, -1, -1);
+        glVertex3f(-1, -1, -1);
+
+        // Left Face - Yellow
+        glColor3f(1, 1, 0);
+        glVertex3f( 0,  1,  0);
+        glVertex3f(-1, -1, -1);
+        glVertex3f(-1, -1,  1);
+
+    glEnd();
+
+     glBegin(GL_QUADS);
+
+        // Base - Cyan
+        glColor3f(0, 1, 1);
+        glVertex3f(-1, -1,  1);
+        glVertex3f( 1, -1,  1);
+        glVertex3f( 1, -1, -1);
+        glVertex3f(-1, -1, -1);
+
+    glEnd();
+
+
+    angle += 0.05f; // Rotate continuously
+    glutSwapBuffers(); // For smooth display
+}
+
+//When you draw a cube, OpenGL doesn’t automatically know:
+//how far the camera is, how wide you are looking, how objects should look in 3D
+void reshape(int w, int h) {
+    if (h == 0) h = 1; //It means: if the window height becomes 0,
+    //set it to 1 to avoid division by zero errors in later calculations.
+    float aspect = (float)w / h;
+
+    glViewport(0, 0, w, h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+
+    // Perspective projection (creates 3D view)
+    //45.0 how wide the camera can see, aspect → Width/height ratio
+    //1.0 Near clipping distance , 20.0 → Far clipping distance
+    gluPerspective(45.0, aspect, 1.0, 20.0);
+
+    glMatrixMode(GL_MODELVIEW);
+}
+
+void Idle() {
+    glutPostRedisplay();
+}
+
+int main(int argc, char** argv) {
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
+    glutInitWindowSize(600, 600);
+    glutCreateWindow("Rotating 3D Cube Solid Representation_CSE07908439");
+    initGL();
+    glutDisplayFunc(display);
+    glutReshapeFunc(reshape);
+    glutIdleFunc(Idle);
+    glutMainLoop();
+    return 0;
+}
