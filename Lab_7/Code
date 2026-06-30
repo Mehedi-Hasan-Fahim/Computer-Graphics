@@ -1,0 +1,160 @@
+#include <windows.h>
+#include <iostream>
+#include <GL/gl.h>
+#include <GL/glut.h>
+
+using namespace std;
+
+// Global Variables
+int choice;
+int X1, Y1, X2, Y2; // for midpoint line
+int xc, yc, R;      // for midpoint circle
+float ax, ay, bx, by, cx, cy; // for 2D reflection
+int refChoice;      // for reflection axis choice
+
+// 1. Mid Point Line Drawing Algorithm
+void drawMidpointLine() {
+    float dx = X2 - X1;
+    float dy = Y2 - Y1;
+    float dk = (2 * dy) - dx;
+    float dD = 2 * (dy - dx);
+
+    float x = X1;
+    float y = Y1;
+
+    glBegin(GL_POINTS);
+    while (x <= X2 && y <= Y2) {
+        glVertex2d(x, y); // draw the point
+        if (dk < 0) {
+            dk = dk + (2 * dy);
+        } else {
+            y = y + 1;
+            dk = dk + dD;
+        }
+        x = x + 1;
+    }
+    glEnd();
+}
+
+// 2. Mid Point Circle Drawing Algorithm
+void drawMidpointCircle() {
+    int x = 0;
+    int y = R;
+    int pk = 1 - R;
+
+    glBegin(GL_POINTS);
+    while (x <= y) {
+        glVertex2i(xc + x, yc + y); // x times right & y times up from center
+        glVertex2i(xc - x, yc + y); // x times left  & y times up from center
+        glVertex2i(xc + x, yc - y); // x times right & y times down from center
+        glVertex2i(xc - x, yc - y); // x times left  & y times down from center
+
+        glVertex2i(xc + y, yc + x); // y times right & x times up from center
+        glVertex2i(xc - y, yc + x); // y times left  & x times up from center
+        glVertex2i(xc + y, yc - x); // y times right & x times down from center
+        glVertex2i(xc - y, yc - x); // y times left  & x times down from center
+
+        if (pk < 0) {
+            x = x + 1;
+            pk = pk + (2 * x) + 1;
+        } else {
+            x = x + 1;
+            y = y - 1;
+            pk = pk + (2 * x) - (2 * y) + 1;
+        }
+    }
+    glEnd();
+}
+
+// 3. 2D Reflection
+void drawReflection() {
+    // Axes Drawing
+    glColor3f(0.0f, 0.0f, 0.0f); // black color
+    glBegin(GL_LINES);
+        glVertex2f(-500.0f, 0.0f); glVertex2f(500.0f, 0.0f); // X-axis
+        glVertex2f(0.0f, -500.0f); glVertex2f(0.0f, 500.0f); // Y-axis
+    glEnd();
+
+    // Main Triangle
+    glColor3f(1.0f, 0.0f, 0.0f);//red
+    glBegin(GL_TRIANGLES);
+        glVertex2f(ax, ay);
+        glVertex2f(bx, by);
+        glVertex2f(cx, cy);
+    glEnd();
+
+    // Reflection Calculation
+    float rax = ax, ray = ay, rbx = bx, rby = by, rcx = cx, rcy = cy;
+    if (refChoice == 1) { // X-axis Reflection
+        ray = -ay; rby = -by; rcy = -cy;
+    } else if (refChoice == 2) { // Y-axis Reflection
+        rax = -ax; rbx = -bx; rcx = -cx;
+    }
+
+    // Reflected Triangle
+    glColor3f(0.0f, 0.0f, 1.0f); // blue
+    glBegin(GL_TRIANGLES);
+        glVertex2f(rax, ray);
+        glVertex2f(rbx, rby);
+        glVertex2f(rcx, rcy);
+    glEnd();
+}
+
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT);
+    glColor3f(0.0f, 0.0f, 0.0f); // black
+    glPointSize(3.0);
+
+    switch (choice) {
+        case 1:
+            drawMidpointLine();
+            break;
+        case 2:
+            drawMidpointCircle();
+            break;
+        case 3:
+            drawReflection();
+            break;
+    }
+    glFlush();
+}
+
+void myInit() {
+    glClearColor(1.0f, 1.0f, 1.0f,0); //white background
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    // Same co-ordinate system for all of three algorithms
+    gluOrtho2D(-500.0, 500.0, -500.0, 500.0);
+}
+
+int main(int argc, char** argv) {
+    cout << "Enter your choice:\n1. Midpoint Line Drawing Algorithm\n2. Midpoint Circle Algorithm\n3. Line Reflection\n4. Exit\nChoice: ";
+    cin >> choice;
+
+    if (choice == 4) return 0;
+
+    if (choice == 1) {
+        cout << "Enter starting point (X1 Y1): "; cin >> X1 >> Y1;
+        cout << "Enter ending point (X2 Y2): "; cin >> X2 >> Y2;
+    } else if (choice == 2) {
+        cout << "Enter Center Coordinate (xc yc): "; cin >> xc >> yc;
+        cout << "Enter Radius: "; cin >> R;
+    } else if (choice == 3) {
+        cout << "Enter A (x y): "; cin >> ax >> ay;
+        cout << "Enter B (x y): "; cin >> bx >> by;
+        cout << "Enter C (x y): "; cin >> cx >> cy;
+        cout << "Reflection on: 1. X-axis, 2. Y-axis: "; cin >> refChoice;
+    }
+
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB);
+    glutInitWindowSize(640, 480);
+    glutInitWindowPosition(100, 150);
+    glutCreateWindow("Fahim-CSE07308439");
+
+    myInit();
+    glutDisplayFunc(display);
+    glutMainLoop();
+
+    return 0;
+}
