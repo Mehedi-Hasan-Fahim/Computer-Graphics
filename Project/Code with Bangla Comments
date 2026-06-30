@@ -1,0 +1,1635 @@
+/*
+ * ============================================================
+ * PROJECT: Interactive Village Fair - OpenGL Graphics Project
+ * প্রজেক্ট: ইন্টারেক্টিভ গ্রামীণ মেলা - OpenGL গ্রাফিক্স প্রজেক্ট
+ *
+ * LIBRARIES USED (ব্যবহৃত লাইব্রেরি):
+ *   - windows.h  : Windows OS এর জন্য প্রয়োজনীয় হেডার
+ *   - GL/glut.h  : OpenGL Utility Toolkit - window তৈরি ও input handling
+ *   - math.h     : sin(), cos() গাণিতিক ফাংশনের জন্য
+ *
+ * CONTROLS (নিয়ন্ত্রণ):
+ *   Arrow Keys   : চরিত্র নাড়াচাড়া করা (উপর/নিচ/বাম/ডান)
+ *   D key        : দিনের মোড চালু করা
+ *   N key        : রাতের মোড চালু করা
+ *   Y key        : দোকান থেকে জিনিস কেনা (Yes)
+ *   N key        : দোকান থেকে জিনিস না কেনা (No)
+ * ============================================================
+ */
+
+#include <windows.h>   // Windows API হেডার ফাইল
+#include <GL/glut.h>   // OpenGL + GLUT হেডার ফাইল
+#include <math.h>      // গাণিতিক ফাংশনের জন্য (sin, cos)
+
+// PI এর মান define করা হচ্ছে (ডিগ্রি থেকে রেডিয়ানে রূপান্তরের জন্য)
+#define PI 3.14159265
+
+
+// ============================================================
+//          GLOBAL CONFIGURATION SETTINGS
+//          গ্লোবাল কনফিগারেশন সেটিংস
+//          (এই ভেরিয়েবলগুলো পুরো প্রোগ্রামে ব্যবহার হয়)
+// ============================================================
+
+// --- Day/Night Mode (দিন/রাত মোড) ---
+// true = দিন, false = রাত
+bool isDayMode = true; // শুরুতে দিনের মোড চালু থাকে
+
+// --- Wheel Animation (চাকার অ্যানিমেশন) ---
+float wheelAngle = 0.0f;         // চাকার বর্তমান কোণ (ডিগ্রিতে)
+const float WHEEL_SPEED = 1.0f;  // প্রতি ফ্রেমে কতটুকু ঘুরবে
+const int   TIMER_MS    = 20;    // প্রতি 20 মিলিসেকেন্ডে একবার আপডেট
+
+// --- Cloud Animation (মেঘের অ্যানিমেশন) ---
+float cloudOffset = 0.0f;          // মেঘ কতটুকু সরে গেছে (X অক্ষ বরাবর)
+const float CLOUD_SPEED = 0.0003f; // মেঘের গতি (প্রতি ফ্রেমে)
+
+// --- Interactive User Position (ব্যবহারকারীর অবস্থান) ---
+float userX         = -0.4f;       // চরিত্রের X অবস্থান (স্ক্রিনের বাম-ডান)
+float userY         = -0.45f;      // চরিত্রের Y অবস্থান (স্ক্রিনের উপর-নিচ)
+const float USER_SPEED = 0.05f;    // চরিত্রের চলার গতি
+
+// --- Ferris Wheel Center (ফেরিস চাকার কেন্দ্র বিন্দু) ---
+const float WCX = 0.0f;  // চাকার কেন্দ্রের X অবস্থান (স্ক্রিনের মাঝখানে)
+const float WCY = 0.4f;  // চাকার কেন্দ্রের Y অবস্থান (উপরের দিকে)
+
+// --- Ground Dividing Lines (মাটির বিভাজন রেখা) ---
+// এই Y মানগুলো দিয়ে স্ক্রিনকে ভাগ করা হয়
+const float LINE_TOP    =  0.45f; // আকাশ ও মাটির সীমারেখা (সবুজ ঘাসের শুরু)
+const float LINE_MIDDLE = -0.4f;  // সবুজ ও বাদামি মাটির সীমারেখা
+const float LINE_BOTTOM = -0.8f;  // বাদামি ও গাঢ় বাদামির সীমারেখা
+
+// --- Left Stall Position (বাম দোকানের অবস্থান) ---
+const float LSTALL_X = -0.7f; // বাম দোকানের X অবস্থান
+const float LSTALL_Y = -0.05f; // বাম দোকানের Y অবস্থান
+
+// --- Right Stall Position (ডান দোকানের অবস্থান) ---
+const float RSTALL_X =  0.7f;  // ডান দোকানের X অবস্থান
+const float RSTALL_Y = 0.05f;  // ডান দোকানের Y অবস্থান
+
+// --- Interaction & Inventory (মিথস্ক্রিয়া ও ইনভেন্টরি) ---
+bool showNotification = false; // কেনার নোটিফিকেশন দেখাবে কিনা
+int  currentShop = 0;          // বর্তমানে কোন দোকানে আছে (1=বাম, 2=ডান)
+bool askedLeft = false;        // বাম দোকানে প্রশ্ন করা হয়েছে কিনা
+bool askedRight = false;       // ডান দোকানে প্রশ্ন করা হয়েছে কিনা
+bool hasLeftItem = false;      // বাম দোকান থেকে ফল কিনেছে কিনা
+bool hasRightItem = false;     // ডান দোকান থেকে বেলুন কিনেছে কিনা
+
+
+// ============================================================
+//              PRIMITIVE HELPER FUNCTIONS
+//              মৌলিক সাহায্যকারী ফাংশন
+//              (বৃত্ত, আর্চ আঁকার জন্য পুনরায় ব্যবহারযোগ্য ফাংশন)
+// ============================================================
+
+/*
+ * drawFilledCircle() - একটি ভরা বৃত্ত আঁকে
+ * Parameters (প্যারামিটার):
+ *   cx, cy : বৃত্তের কেন্দ্র বিন্দুর X ও Y অবস্থান
+ *   r      : বৃত্তের ব্যাসার্ধ (radius)
+ *
+ * কাজ: GL_POLYGON ব্যবহার করে 360টি বিন্দু দিয়ে একটি ভরা বৃত্ত তৈরি করে
+ * cos(angle) = X দিকের দূরত্ব, sin(angle) = Y দিকের দূরত্ব
+ */
+void drawFilledCircle(float cx, float cy, float r) {
+    glBegin(GL_POLYGON); // ভরা বহুভুজ আঁকা শুরু
+    for (int i = 0; i < 360; i++) {
+        // প্রতিটি ডিগ্রিকে রেডিয়ানে রূপান্তর করে বিন্দু নির্ধারণ
+        float angle = i * PI / 180.0f;
+        glVertex2f(cx + cos(angle) * r, cy + sin(angle) * r);
+    }
+    glEnd(); // আঁকা শেষ
+}
+
+/*
+ * drawCircleOutline() - একটি ফাঁকা বৃত্ত (শুধু বর্ডার) আঁকে
+ * Parameters: drawFilledCircle() এর মতোই
+ *
+ * GL_LINE_LOOP: শেষ বিন্দু থেকে প্রথম বিন্দুতে ফিরে এসে রেখা বন্ধ করে
+ */
+void drawCircleOutline(float cx, float cy, float r) {
+    glBegin(GL_LINE_LOOP); // বদ্ধ রেখাচক্র আঁকা শুরু
+    for (int i = 0; i < 360; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(cx + cos(angle) * r, cy + sin(angle) * r);
+    }
+    glEnd();
+}
+
+/*
+ * drawArch() - একটি অর্ধবৃত্তাকার খিলান (arch) আঁকে
+ * Parameters:
+ *   cx, cy         : কেন্দ্র বিন্দু
+ *   radiusX        : অনুভূমিক ব্যাসার্ধ (চওড়া)
+ *   radiusY        : উল্লম্ব ব্যাসার্ধ (উচ্চতা)
+ *
+ * কাজ: 0° থেকে 180° পর্যন্ত আঁকে (উপরের অর্ধেক)
+ * গন্ডোলার ছাদের উপরে ঝুলানো হুক আঁকতে ব্যবহার হয়
+ */
+void drawArch(float cx, float cy, float radiusX, float radiusY) {
+    glBegin(GL_LINE_STRIP); // সংযুক্ত রেখা আঁকা শুরু
+    for (int i = 0; i <= 180; i++) {
+        float angle = i * PI / 180.0f;
+        // উপবৃত্তের সূত্র: x = cx + radiusX*cos(angle), y = cy + radiusY*sin(angle)
+        glVertex2f(cx + cos(angle) * radiusX, cy + sin(angle) * radiusY);
+    }
+    glEnd();
+
+    // খিলানের উপরে একটি ছোট উল্লম্ব রেখা (ঝুলানো হুকের মতো)
+    glBegin(GL_LINES);
+    glVertex2f(cx, cy + radiusY);          // হুকের নিচের বিন্দু
+    glVertex2f(cx, cy + radiusY + 0.02f);  // হুকের উপরের বিন্দু
+    glEnd();
+}
+
+
+// ============================================================
+//            SKY DRAWING (আকাশ আঁকা - দিন ও রাত)
+// ============================================================
+
+/*
+ * drawSky() - আকাশ আঁকে
+ *
+ * GL_QUADS দিয়ে চারটি কোণের বিন্দু দিয়ে একটি চতুর্ভুজ আঁকা হয়।
+ * দিনে: গাঢ় নীল (উপরে) থেকে হালকা নীল (নিচে) - gradient effect
+ * রাতে: গাঢ় কালো-নীল থেকে একটু হালকা নীল
+ *
+ * OpenGL এ প্রতিটি vertex এর আগে রঙ দিলে gradient (ধীরে রঙ পরিবর্তন) হয়
+ */
+void drawSky() {
+    glBegin(GL_QUADS);
+    if (isDayMode) {
+        // দিনের আকাশ: উপরে গাঢ় নীল
+        glColor3f(0.15f, 0.35f, 0.75f);
+        glVertex2f(-1.0f, 1.0f);  // উপর-বাম কোণ
+        glVertex2f( 1.0f, 1.0f);  // উপর-ডান কোণ
+        // নিচে হালকা আকাশি নীল (gradient তৈরি হয়)
+        glColor3f(0.55f, 0.78f, 0.95f);
+        glVertex2f( 1.0f, LINE_TOP); // নিচ-ডান কোণ
+        glVertex2f(-1.0f, LINE_TOP); // নিচ-বাম কোণ
+    } else {
+        // রাতের আকাশ: উপরে প্রায় কালো
+        glColor3f(0.02f, 0.05f, 0.15f);
+        glVertex2f(-1.0f, 1.0f);
+        glVertex2f( 1.0f, 1.0f);
+        // নিচে একটু হালকা নীল
+        glColor3f(0.1f, 0.15f, 0.3f);
+        glVertex2f( 1.0f, LINE_TOP);
+        glVertex2f(-1.0f, LINE_TOP);
+    }
+    glEnd();
+}
+
+
+// ============================================================
+//           CLOUD DRAWING (মেঘ আঁকা - দিন ও রাত)
+// ============================================================
+
+/*
+ * drawSingleCloud() - একটি মেঘ আঁকে
+ * Parameters:
+ *   cx, cy : মেঘের কেন্দ্র অবস্থান
+ *   scale  : মেঘের আকার গুণক (বড়/ছোট করার জন্য)
+ *
+ * কাজ: ৫টি ভরা বৃত্ত দিয়ে একটি তুলোর মতো মেঘ তৈরি করা হয়
+ * দিনে সাদা, রাতে ধূসর রঙের মেঘ দেখায়
+ */
+void drawSingleCloud(float cx, float cy, float scale) {
+    // দিন/রাত অনুযায়ী মেঘের রঙ নির্ধারণ
+    if (isDayMode) {
+        glColor4f(1.0f, 1.0f, 1.0f, 1.0f); // সাদা মেঘ, 100% অপ্যাক
+    } else {
+        glColor4f(0.35f, 0.35f, 0.45f, 0.9f); // ধূসর-নীল মেঘ
+    }
+    // মেঘের মাঝখানে বড় বৃত্ত
+    drawFilledCircle(cx,              cy,             0.06f * scale);
+    // মেঘের বাম ও ডান দিকে মাঝারি বৃত্ত
+    drawFilledCircle(cx - 0.05f*scale, cy - 0.01f*scale, 0.045f * scale);
+    drawFilledCircle(cx + 0.05f*scale, cy - 0.01f*scale, 0.045f * scale);
+    // মেঘের উপরে ছোট বৃত্ত (fluffy texture)
+    drawFilledCircle(cx - 0.03f*scale, cy + 0.03f*scale, 0.04f * scale);
+    drawFilledCircle(cx + 0.03f*scale, cy + 0.03f*scale, 0.04f * scale);
+}
+
+/*
+ * drawClouds() - সব মেঘ আঁকে এবং অ্যানিমেশন পরিচালনা করে
+ *
+ * cloudOffset যোগ করে মেঘ ডান থেকে বামে সরানো হয়।
+ * স্ক্রিনের বাইরে চলে গেলে wrap করে (আবার ডান দিক থেকে আসে)
+ *
+ * positions[][3] = {X অবস্থান, Y অবস্থান, আকার গুণক}
+ */
+void drawClouds() {
+    float wrap = 2.4f; // কতটুকু সরলে পুনরায় শুরু হবে
+
+    // ৫টি মেঘের প্রাথমিক অবস্থান ও আকার
+    float positions[][3] = {
+        {-0.7f, 0.85f, 1.0f},  // মেঘ ১: বাম দিকে, স্বাভাবিক আকার
+        {-0.2f, 0.75f, 1.3f},  // মেঘ ২: মাঝ-বামে, একটু বড়
+        { 0.3f, 0.90f, 0.9f},  // মেঘ ৩: মাঝ-ডানে, একটু ছোট
+        { 0.7f, 0.78f, 1.1f},  // মেঘ ৪: ডানে, মাঝারি বড়
+        { 0.0f, 0.95f, 0.8f}   // মেঘ ৫: মাঝখানে, ছোট
+    };
+
+    for (int i = 0; i < 5; i++) {
+        // cloudOffset যোগ করে মেঘ সরানো হচ্ছে
+        float x = positions[i][0] + cloudOffset;
+        // স্ক্রিনের ডান সীমা পার হলে বাম দিক থেকে আবার শুরু
+        while (x > 1.3f)  x -= wrap;
+        // স্ক্রিনের বাম সীমার বাইরে গেলে ডান দিক থেকে শুরু
+        while (x < -1.1f) x += wrap;
+        drawSingleCloud(x, positions[i][1], positions[i][2]);
+    }
+}
+
+
+// ============================================================
+//          SUN / MOON DRAWING (সূর্য বা চাঁদ আঁকা)
+// ============================================================
+
+/*
+ * drawSunOrMoon() - দিনে সূর্য, রাতে চাঁদ আঁকে
+ *
+ * সূর্য: হলুদ বৃত্ত + চারপাশে রশ্মি (glLineWidth দিয়ে মোটা রেখা)
+ *        রশ্মি আঁকা হয় 0° থেকে 330° পর্যন্ত 30° পরপর
+ *
+ * চাঁদ: সাদা বৃত্ত + উপরে ছোট ছোট বৃত্ত (crater/গর্ত দেখানোর জন্য)
+ */
+void drawSunOrMoon() {
+    float sx = -0.8f, sy = 0.88f; // সূর্য/চাঁদের অবস্থান (উপর-বাম কোণে)
+
+    if (isDayMode) {
+        // ========== সূর্য আঁকা ==========
+        glColor3f(1.0f, 0.85f, 0.3f); // সোনালি হলুদ রঙ
+        glLineWidth(2.0f); // মোটা রেখা
+
+        // সূর্যের রশ্মি আঁকা (12টি রশ্মি, 30° পরপর)
+        for (int i = 0; i < 360; i += 30) {
+            float angle = i * PI / 180.0f;
+            glBegin(GL_LINES);
+            // রশ্মির ভেতরের বিন্দু (বৃত্তের উপর)
+            glVertex2f(sx + cos(angle) * 0.07f, sy + sin(angle) * 0.07f);
+            // রশ্মির বাইরের বিন্দু (বৃত্তের বাইরে)
+            glVertex2f(sx + cos(angle) * 0.11f, sy + sin(angle) * 0.11f);
+            glEnd();
+        }
+        glLineWidth(1.0f); // আবার স্বাভাবিক রেখার মোটা
+
+        // সূর্যের কেন্দ্রে হলুদ ভরা বৃত্ত
+        glColor3f(1.0f, 0.92f, 0.2f);
+        drawFilledCircle(sx, sy, 0.065f);
+        // সূর্যের গাঢ় হলুদ বর্ডার
+        glColor3f(1.0f, 0.7f, 0.0f);
+        drawCircleOutline(sx, sy, 0.065f);
+    } else {
+        // ========== চাঁদ আঁকা ==========
+        // সাদা-ধূসর রঙের ভরা বৃত্ত (পূর্ণ চাঁদ)
+        glColor3f(0.9f, 0.9f, 0.95f);
+        drawFilledCircle(sx, sy, 0.065f);
+
+        // চাঁদের গর্ত (crater) আঁকা - ৩টি ছোট ধূসর বৃত্ত
+        glColor3f(0.75f, 0.75f, 0.8f);
+        drawFilledCircle(sx - 0.015f, sy + 0.015f, 0.015f); // বড় গর্ত
+        drawFilledCircle(sx + 0.020f, sy - 0.020f, 0.010f); // মাঝারি গর্ত
+        drawFilledCircle(sx + 0.015f, sy + 0.025f, 0.008f); // ছোট গর্ত
+    }
+}
+
+
+// ============================================================
+//           STARS DRAWING (তারা আঁকা - শুধু রাতে)
+// ============================================================
+
+/*
+ * drawStars() - রাতের আকাশে তারা আঁকে
+ *
+ * isDayMode সত্য হলে ফাংশন সঙ্গে সঙ্গে return করে (তারা দেখায় না)
+ * GL_POINTS দিয়ে নির্দিষ্ট অবস্থানে বিন্দু (তারা) আঁকা হয়
+ * glPointSize(2.5f) দিয়ে বিন্দুর আকার নির্ধারণ করা হয়
+ */
+void drawStars() {
+    if (isDayMode) return; // দিনে তারা দেখাবে না
+
+    glColor3f(1.0f, 1.0f, 0.8f); // হালকা হলুদাভ সাদা রঙ
+    glPointSize(2.5f);            // তারার আকার
+    glBegin(GL_POINTS);
+    // ৯টি তারার অবস্থান (হাতে নির্ধারিত)
+    glVertex2f( 0.5f,  0.92f); glVertex2f( 0.65f, 0.97f);
+    glVertex2f( 0.85f, 0.88f); glVertex2f(-0.45f, 0.95f);
+    glVertex2f(-0.55f, 0.80f); glVertex2f( 0.15f, 0.98f);
+    glVertex2f( 0.92f, 0.95f); glVertex2f(-0.25f, 0.85f);
+    glVertex2f(-0.15f, 0.92f);
+    glEnd();
+}
+
+
+// ============================================================
+//          GROUND LAYERS (মাটির স্তর - বিভিন্ন রঙে)
+// ============================================================
+
+/*
+ * drawGround() - মাটির বিভিন্ন স্তর আঁকে
+ *
+ * ৩টি স্তর আঁকা হয়:
+ *   স্তর ১: LINE_TOP থেকে LINE_MIDDLE → সবুজ ঘাস
+ *   স্তর ২: LINE_MIDDLE থেকে LINE_BOTTOM → বাদামি মাটি
+ *   স্তর ৩: LINE_BOTTOM থেকে -1.0 → গাঢ় বাদামি গভীর মাটি
+ *
+ * শেষে দুটো গাঢ় রেখা দিয়ে স্তরগুলো আলাদা করা হয়
+ */
+void drawGround() {
+    // ===== স্তর ১: সবুজ ঘাস (উপরের স্তর) =====
+    glBegin(GL_QUADS);
+    glColor3f(0.35f, 0.70f, 0.25f); // গাঢ় সবুজ (উপরে)
+    glVertex2f(-1.0f, LINE_TOP); glVertex2f( 1.0f, LINE_TOP);
+    glColor3f(0.45f, 0.80f, 0.30f); // হালকা সবুজ (নিচে) - gradient
+    glVertex2f( 1.0f, LINE_MIDDLE); glVertex2f(-1.0f, LINE_MIDDLE);
+    glEnd();
+
+    // ===== স্তর ২: বাদামি মাটি (মাঝের স্তর) =====
+    glBegin(GL_QUADS);
+    glColor3f(0.72f, 0.55f, 0.30f); // হালকা বাদামি (উপরে)
+    glVertex2f(-1.0f, LINE_MIDDLE); glVertex2f( 1.0f, LINE_MIDDLE);
+    glColor3f(0.60f, 0.45f, 0.25f); // একটু গাঢ় বাদামি (নিচে)
+    glVertex2f( 1.0f, LINE_BOTTOM); glVertex2f(-1.0f, LINE_BOTTOM);
+    glEnd();
+
+    // ===== স্তর ৩: গাঢ় বাদামি (নিচের স্তর) =====
+    glBegin(GL_QUADS);
+    glColor3f(0.45f, 0.35f, 0.20f); // গাঢ় বাদামি (উপরে)
+    glVertex2f(-1.0f, LINE_BOTTOM); glVertex2f( 1.0f, LINE_BOTTOM);
+    glColor3f(0.35f, 0.25f, 0.15f); // আরও গাঢ় (নিচে)
+    glVertex2f( 1.0f, -1.0f); glVertex2f(-1.0f, -1.0f);
+    glEnd();
+
+    // ===== স্তর বিভাজনকারী রেখা =====
+    glColor3f(0.2f, 0.15f, 0.05f); // কালো-বাদামি রেখা
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+    // মাঝের বিভাজন রেখা
+    glVertex2f(-1.0f, LINE_MIDDLE); glVertex2f(1.0f, LINE_MIDDLE);
+    // নিচের বিভাজন রেখা
+    glVertex2f(-1.0f, LINE_BOTTOM); glVertex2f(1.0f, LINE_BOTTOM);
+    glEnd();
+    glLineWidth(1.0f);
+}
+
+/*
+ * drawGrassBlades() - ঘাসের পাতা আঁকে
+ *
+ * নির্দিষ্ট X অবস্থানে LINE_MIDDLE রেখা থেকে উপরে ঘাসের পাতা আঁকা হয়।
+ * প্রতিটি অবস্থানে ৩টি করে পাতা আঁকা হয় (বাম-কাত, ডান-কাত, সোজা)।
+ */
+void drawGrassBlades() {
+    glColor3f(0.20f, 0.55f, 0.15f); // গাঢ় সবুজ
+    glLineWidth(1.5f);
+
+    // ঘাস আঁকার X অবস্থানগুলো (18টি জায়গায় ঘাস)
+    float grassX[] = {-0.95f,-0.85f,-0.75f,-0.55f,-0.45f,-0.35f,-0.25f,
+                       0.25f, 0.35f, 0.45f, 0.55f, 0.75f, 0.85f, 0.95f,
+                      -0.15f, 0.15f, -0.65f, 0.65f};
+    int n = 18;
+    for (int i = 0; i < n; i++) {
+        float x = grassX[i];
+        float baseY = LINE_MIDDLE; // ঘাসের গোড়া মাটির সীমায়
+        glBegin(GL_LINES);
+        // বাম দিকে বাঁকা পাতা
+        glVertex2f(x, baseY);          glVertex2f(x - 0.01f, baseY + 0.04f);
+        // ডান দিকে বাঁকা পাতা (একটু লম্বা)
+        glVertex2f(x, baseY);          glVertex2f(x + 0.015f, baseY + 0.05f);
+        // সোজা পাতা
+        glVertex2f(x + 0.01f, baseY);  glVertex2f(x + 0.005f, baseY + 0.035f);
+        glEnd();
+    }
+    glLineWidth(1.0f);
+}
+
+/*
+ * drawTree() - একটি গাছ আঁকে
+ * Parameters:
+ *   x     : গাছের X অবস্থান
+ *   baseY : গাছের গোড়ার Y অবস্থান
+ *
+ * গাছ = বাদামি কাণ্ড (চতুর্ভুজ) + সবুজ পাতা (৩টি ওভারল্যাপিং বৃত্ত)
+ */
+void drawTree(float x, float baseY) {
+    // গাছের কাণ্ড (বাদামি চতুর্ভুজ)
+    glColor3f(0.45f, 0.30f, 0.15f);
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.02f, baseY);          // নিচ-বাম
+    glVertex2f(x + 0.02f, baseY);          // নিচ-ডান
+    glVertex2f(x + 0.02f, baseY + 0.15f);  // উপর-ডান
+    glVertex2f(x - 0.02f, baseY + 0.15f);  // উপর-বাম
+    glEnd();
+
+    // গাছের পাতা (সবুজ বৃত্তের সমষ্টি)
+    glColor3f(0.15f, 0.60f, 0.15f);
+    drawFilledCircle(x,         baseY + 0.22f, 0.07f); // মাঝের বড় বৃত্ত
+    drawFilledCircle(x - 0.05f, baseY + 0.18f, 0.06f); // বাম বৃত্ত
+    drawFilledCircle(x + 0.05f, baseY + 0.18f, 0.06f); // ডান বৃত্ত
+
+    // পাতার গাঢ় বর্ডার
+    glColor3f(0.10f, 0.40f, 0.10f);
+    drawCircleOutline(x,         baseY + 0.22f, 0.07f);
+    drawCircleOutline(x - 0.05f, baseY + 0.18f, 0.06f);
+    drawCircleOutline(x + 0.05f, baseY + 0.18f, 0.06f);
+}
+
+/*
+ * drawTrees() - ৪টি গাছ আঁকে (দুই প্রান্তে ও মাঝে)
+ * LINE_TOP - offset দিয়ে গাছ সবুজ মাটির উপর থেকে শুরু হয়
+ */
+void drawTrees() {
+    drawTree(-0.88f, LINE_TOP - 0.03f); // একদম বাম প্রান্ত
+    drawTree(-0.40f, LINE_TOP - 0.02f); // বাম-মাঝ
+    drawTree( 0.42f, LINE_TOP - 0.02f); // ডান-মাঝ
+    drawTree( 0.88f, LINE_TOP - 0.03f); // একদম ডান প্রান্ত
+}
+
+/*
+ * drawPathway() - পথ/রাস্তা আঁকে
+ *
+ * ৩ ধাপে আঁকা হয়:
+ *   ১. স্ট্রাইপড লাইন (ড্যাশ দিয়ে বোঝানো যে পথের কিনারা)
+ *   ২. র‍্যান্ডম বিন্দু (মাটির দানা/পাথর দেখানোর জন্য)
+ *   ৩. অনিয়মিত রেখা (পথের উপর বালুর টেক্সচার)
+ */
+void drawPathway() {
+    // ===== পথের কিনারার ড্যাশ লাইন =====
+    glColor3f(0.55f, 0.40f, 0.20f);
+    glLineWidth(3.0f);
+    glBegin(GL_LINES);
+    for (float px = -1.0f; px < 1.0f; px += 0.15f) {
+        // উপরের ড্যাশ লাইন
+        glVertex2f(px, LINE_MIDDLE - 0.12f);
+        glVertex2f(px + 0.08f, LINE_MIDDLE - 0.12f);
+        // নিচের ড্যাশ লাইন
+        glVertex2f(px, LINE_MIDDLE - 0.28f);
+        glVertex2f(px + 0.08f, LINE_MIDDLE - 0.28f);
+    }
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== পথের মাটির দানা (র‍্যান্ডম বিন্দু) =====
+    glColor3f(0.65f, 0.45f, 0.25f);
+    glPointSize(2.0f);
+    glBegin(GL_POINTS);
+    // sin() ও cos() দিয়ে র‍্যান্ডম দেখানো অফসেট তৈরি হচ্ছে
+    for(float px = -1.0f; px < 1.0f; px += 0.06f) {
+        for(float py = LINE_MIDDLE - 0.05f; py > LINE_BOTTOM + 0.05f; py -= 0.08f) {
+            // গাণিতিক কৌশলে pseudo-random অবস্থান
+            float offsetX = sin(py * 100.0f + px * 50.0f) * 0.02f;
+            float offsetY = cos(px * 80.0f + py * 60.0f) * 0.02f;
+            glVertex2f(px + offsetX, py + offsetY);
+        }
+    }
+    glEnd();
+
+    // ===== পথের উপর বালুর টেক্সচার (ঢেউ খেলানো রেখা) =====
+    glColor3f(0.60f, 0.42f, 0.22f);
+    glBegin(GL_LINES);
+    for (float px = -0.9f; px < 1.0f; px += 0.2f) {
+        // sin() দিয়ে ঢেউ খেলানো রেখা
+        float py = LINE_MIDDLE - 0.2f + sin(px * 10.0f) * 0.05f;
+        glVertex2f(px, py); glVertex2f(px + 0.05f, py);
+    }
+    glEnd();
+}
+
+
+// ============================================================
+//         NIGHT OVERLAY (রাতের অন্ধকার প্রভাব)
+// ============================================================
+
+/*
+ * drawNightOverlay() - রাতে মাটির উপর আধা-স্বচ্ছ কালো স্তর দেয়
+ *
+ * GL_BLEND চালু করে স্বচ্ছতা (transparency) সক্রিয় করা হয়।
+ * glColor4f এর চতুর্থ মান (alpha = 0.4) মানে 40% অপ্যাক = 60% স্বচ্ছ।
+ * এতে মাটি দেখা যায় কিন্তু অন্ধকারাচ্ছন্ন দেখায়।
+ */
+void drawNightOverlay() {
+    if (!isDayMode) { // শুধু রাতে কাজ করবে
+        glEnable(GL_BLEND); // transparency চালু
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // মিশ্রণ পদ্ধতি
+
+        // আধা-স্বচ্ছ কালো-নীল স্তর (সম্পূর্ণ মাটি জুড়ে)
+        glColor4f(0.0f, 0.0f, 0.1f, 0.4f); // (R,G,B, Alpha=40%)
+        glBegin(GL_QUADS);
+        glVertex2f(-1.0f, LINE_TOP); // উপর-বাম
+        glVertex2f( 1.0f, LINE_TOP); // উপর-ডান
+        glVertex2f( 1.0f, -1.0f);   // নিচ-ডান
+        glVertex2f(-1.0f, -1.0f);   // নিচ-বাম
+        glEnd();
+        glDisable(GL_BLEND); // transparency বন্ধ
+    }
+}
+
+
+// ============================================================
+//        INTERACTIVE USER CHARACTER (ব্যবহারকারীর চরিত্র)
+// ============================================================
+
+/*
+ * drawUser() - মূল খেলোয়াড়ের চরিত্র আঁকে
+ * Parameters:
+ *   cx, cy : চরিত্রের কেন্দ্র অবস্থান
+ *
+ * চরিত্রের অংশসমূহ (নিচ থেকে উপর):
+ *   ১. জুতা (লাল চতুর্ভুজ)
+ *   ২. প্যান্ট (গাঢ় নীল দুটো পা)
+ *   ৩. জামা (হলুদ, বুকে কমলা বোতাম)
+ *   ৪. হাত (ত্বকের রঙের মোটা রেখা + তালু বৃত্ত)
+ *   ৫. ইনভেন্টরি আইটেম (বেলুন বা ফলের ঝুড়ি)
+ *   ৬. গলা
+ *   ৭. মাথা ও চুল
+ *   ৮. চোখ ও হাসি
+ */
+void drawUser(float cx, float cy) {
+
+    // ===== প্যান্ট (দুটো পা) =====
+    glColor3f(0.15f, 0.25f, 0.45f); // গাঢ় নীল জিন্স রঙ
+    glBegin(GL_QUADS);
+    // বাম পা
+    glVertex2f(cx - 0.05f, cy - 0.05f); glVertex2f(cx - 0.01f, cy - 0.05f);
+    glVertex2f(cx - 0.01f, cy - 0.28f); glVertex2f(cx - 0.05f, cy - 0.28f);
+    // ডান পা
+    glVertex2f(cx + 0.01f, cy - 0.05f); glVertex2f(cx + 0.05f, cy - 0.05f);
+    glVertex2f(cx + 0.05f, cy - 0.28f); glVertex2f(cx + 0.01f, cy - 0.28f);
+    glEnd();
+
+    // ===== জুতা (দুটো পায়ের নিচে লাল বাক্স) =====
+    glColor3f(0.8f, 0.2f, 0.1f); // লাল রঙ
+    glBegin(GL_QUADS);
+    // বাম জুতা
+    glVertex2f(cx - 0.06f, cy - 0.28f); glVertex2f(cx - 0.01f, cy - 0.28f);
+    glVertex2f(cx - 0.01f, cy - 0.33f); glVertex2f(cx - 0.06f, cy - 0.33f);
+    // ডান জুতা
+    glVertex2f(cx + 0.01f, cy - 0.28f); glVertex2f(cx + 0.06f, cy - 0.28f);
+    glVertex2f(cx + 0.06f, cy - 0.33f); glVertex2f(cx + 0.01f, cy - 0.33f);
+    glEnd();
+
+    // ===== জামার মূল অংশ (হলুদ চতুর্ভুজ) =====
+    glColor3f(0.95f, 0.75f, 0.15f); // উজ্জ্বল হলুদ
+    glBegin(GL_QUADS);
+    glVertex2f(cx - 0.07f, cy + 0.14f); // উপর-বাম কাঁধ
+    glVertex2f(cx + 0.07f, cy + 0.14f); // উপর-ডান কাঁধ
+    glVertex2f(cx + 0.08f, cy - 0.12f); // নিচ-ডান
+    glVertex2f(cx - 0.08f, cy - 0.12f); // নিচ-বাম
+    glEnd();
+
+    // ===== জামার বোতাম (কমলা ডিজাইন) =====
+    glColor3f(0.85f, 0.45f, 0.10f); // কমলা রঙ
+    glBegin(GL_QUADS);
+    glVertex2f(cx - 0.02f, cy + 0.14f); glVertex2f(cx + 0.02f, cy + 0.14f);
+    glVertex2f(cx + 0.02f, cy + 0.05f); glVertex2f(cx - 0.02f, cy + 0.05f);
+    glEnd();
+
+    // ===== হাত (মোটা রেখা দিয়ে আঁকা) =====
+    glColor3f(0.95f, 0.75f, 0.60f); // ত্বকের রঙ
+    glLineWidth(6.0f); // মোটা রেখা দিয়ে হাত দেখাচ্ছে
+    glBegin(GL_LINES);
+    // বাম হাত (নিচের দিকে ঝুলছে)
+    glVertex2f(cx - 0.07f, cy + 0.12f); glVertex2f(cx - 0.12f, cy - 0.02f);
+    // ডান হাত (উপরের দিকে উঠানো - ইন্টারেক্টিভ ভঙ্গি)
+    glVertex2f(cx + 0.07f, cy + 0.12f); glVertex2f(cx + 0.14f, cy + 0.18f);
+    glEnd();
+    // হাতের তালু (ছোট ভরা বৃত্ত)
+    drawFilledCircle(cx - 0.12f, cy - 0.02f, 0.025f); // বাম তালু
+    drawFilledCircle(cx + 0.14f, cy + 0.18f, 0.025f); // ডান তালু
+    glLineWidth(1.0f);
+
+    // ============================================================
+    //       INVENTORY ITEMS (ক্রয় করা আইটেম দেখানো)
+    // ============================================================
+
+    /*
+     * hasRightItem = true হলে ডান হাতে বেলুন দেখানো হয়
+     * বেলুন: একটি সুতা (LINE_STRIP) + উপবৃত্তাকার বৃত্ত + ছোট ত্রিভুজ (নিচের গাঁট)
+     */
+  if (hasRightItem) {
+        // বেলুনের সুতা (ঢেউ খেলানো রেখা)
+        glColor3f(0.9f, 0.9f, 0.9f); // হালকা ধূসর সুতা
+        glLineWidth(1.5f);
+        glBegin(GL_LINE_STRIP);
+        glVertex2f(cx + 0.15f, cy + 0.34f);  // বেলুনের নিচের গাঁট থেকে শুরু
+        glVertex2f(cx + 0.13f, cy + 0.28f);  // বাঁকানো সুতা (বামে)
+        glVertex2f(cx + 0.16f, cy + 0.23f);  // বাঁকানো সুতা (ডানে)
+        glVertex2f(cx + 0.14f, cy + 0.18f);  // হাতের তালু পর্যন্ত
+        glEnd();
+
+        // বেলুনের মূল অংশ (উপবৃত্ত - উল্লম্বভাবে লম্বা)
+        glPushMatrix();
+        glTranslatef(cx + 0.15f, cy + 0.38f, 0.0f);
+        glScalef(1.0f, 1.25f, 1.0f); // Y দিকে বড় করে উপবৃত্ত তৈরি
+        glColor3f(0.1f * 0.7f, 0.7f * 0.7f, 1.0f * 0.7f); // গাঢ় নীল শেড
+        drawFilledCircle(0.0f, 0.0f, 0.035f);              // বাইরের বৃত্ত
+        glColor3f(0.1f, 0.7f, 1.0f);                       // উজ্জ্বল নীল
+        drawFilledCircle(-0.005f, 0.005f, 0.025f);          // ভেতরের হাইলাইট
+        glPopMatrix();
+
+        // বেলুনের নিচের গাঁট (ছোট ত্রিভুজ)
+        glColor3f(0.1f * 0.7f, 0.7f * 0.7f, 1.0f * 0.7f);
+        glBegin(GL_TRIANGLES);
+        glVertex2f(cx + 0.15f, cy + 0.34f);   // উপর বিন্দু
+        glVertex2f(cx + 0.14f, cy + 0.325f);  // নিচ-বাম
+        glVertex2f(cx + 0.16f, cy + 0.325f);  // নিচ-ডান
+        glEnd();
+
+        // বেলুনের আলোর প্রতিফলন (সাদা ছোট বৃত্ত)
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glPushMatrix();
+        glTranslatef(cx + 0.15f, cy + 0.38f, 0.0f);
+        glScalef(1.0f, 2.0f, 1.0f);
+        drawFilledCircle(-0.015f, 0.008f, 0.005f); // ছোট সাদা বিন্দু
+        glPopMatrix();
+    }
+
+    /*
+     * hasLeftItem = true হলে বাম হাতে ফলের ঝুড়ি দেখানো হয়
+     * ঝুড়ি: বাদামি হ্যান্ডেল (LINE_STRIP) + বাদামি বাক্স + উপরে একটি আপেল
+     */
+    if (hasLeftItem) {
+        // ঝুড়ির হ্যান্ডেল (U আকৃতির রেখা)
+        glColor3f(0.5f, 0.3f, 0.1f); // বাদামি
+        glLineWidth(2.0f);
+        glBegin(GL_LINE_STRIP);
+        glVertex2f(cx - 0.14f, cy - 0.02f); // বাম উপরে
+        glVertex2f(cx - 0.14f, cy - 0.08f); // বাম নিচে
+        glVertex2f(cx - 0.10f, cy - 0.08f); // ডান নিচে
+        glVertex2f(cx - 0.10f, cy - 0.02f); // ডান উপরে
+        glEnd();
+        glLineWidth(1.0f);
+
+        // ঝুড়ির মূল অংশ (ট্রাপিজিয়াম আকৃতি - উপরে চওড়া, নিচে সরু)
+        glColor3f(0.85f, 0.65f, 0.35f); // হালকা বাদামি
+        glBegin(GL_QUADS);
+        glVertex2f(cx - 0.16f, cy - 0.08f); // উপর-বাম
+        glVertex2f(cx - 0.08f, cy - 0.08f); // উপর-ডান
+        glVertex2f(cx - 0.09f, cy - 0.18f); // নিচ-ডান
+        glVertex2f(cx - 0.15f, cy - 0.18f); // নিচ-বাম
+        glEnd();
+
+        // ঝুড়ির উপরের রিম (গাঢ় বাদামি পট্টি)
+        glColor3f(0.65f, 0.45f, 0.20f);
+        glBegin(GL_QUADS);
+        glVertex2f(cx - 0.16f, cy - 0.08f); glVertex2f(cx - 0.08f, cy - 0.08f);
+        glVertex2f(cx - 0.085f, cy - 0.10f); glVertex2f(cx - 0.155f, cy - 0.10f);
+        glEnd();
+
+        // ঝুড়ির উপরে আপেল
+        glPushMatrix();
+        glTranslatef(cx - 0.12f, cy - 0.06f, 0.0f);
+        glColor3f(0.7f, 0.0f, 0.0f);           // গাঢ় লাল আপেল
+        drawFilledCircle(0.0f, 0.0f, 0.025f);
+        glColor3f(1.0f, 0.2f, 0.2f);           // উজ্জ্বল লাল হাইলাইট
+        drawFilledCircle(-0.006f, 0.006f, 0.012f);
+        // আপেলের বোঁটা
+        glColor3f(0.3f, 0.15f, 0.0f); glLineWidth(2.0f);
+        glBegin(GL_LINES); glVertex2f(0.0f, 0.02f); glVertex2f(0.008f, 0.035f); glEnd();
+        // আপেলের পাতা
+        glColor3f(0.1f, 0.6f, 0.1f);
+        glBegin(GL_TRIANGLES);
+        glVertex2f(0.008f, 0.025f); glVertex2f(0.025f, 0.035f); glVertex2f(0.018f, 0.012f);
+        glEnd();
+        glPopMatrix();
+    }
+
+    // ===== গলা =====
+    glColor3f(0.95f, 0.75f, 0.60f); // ত্বকের রঙ
+    glBegin(GL_QUADS);
+    glVertex2f(cx - 0.02f, cy + 0.14f); glVertex2f(cx + 0.02f, cy + 0.14f);
+    glVertex2f(cx + 0.02f, cy + 0.18f); glVertex2f(cx - 0.02f, cy + 0.18f);
+    glEnd();
+
+    // ===== মাথা (ত্বকের রঙের বৃত্ত) =====
+    drawFilledCircle(cx, cy + 0.24f, 0.08f);
+
+    // ===== চুল (কালো অর্ধবৃত্ত + পাশে ছোট বৃত্ত) =====
+    glColor3f(0.15f, 0.10f, 0.05f); // কালো-বাদামি
+    glBegin(GL_POLYGON);
+    // মাথার উপরের অর্ধেক কালো করা হচ্ছে
+    for (int i = 0; i <= 180; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(cx + cos(angle) * 0.082f, cy + 0.26f + sin(angle) * 0.06f);
+    }
+    glEnd();
+    // চুলের ঝাঁকড়া অংশ (পাশে বড় বৃত্ত)
+    drawFilledCircle(cx - 0.04f, cy + 0.28f, 0.025f);
+    drawFilledCircle(cx + 0.02f, cy + 0.29f, 0.030f);
+    drawFilledCircle(cx + 0.05f, cy + 0.27f, 0.020f);
+
+    // ===== চোখ (সাদা + কালো মণি + সাদা চকচকে বিন্দু) =====
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawFilledCircle(cx - 0.03f, cy + 0.24f, 0.022f); // বাম চোখের সাদা অংশ
+    drawFilledCircle(cx + 0.03f, cy + 0.24f, 0.022f); // ডান চোখের সাদা অংশ
+    glColor3f(0.0f, 0.0f, 0.0f);
+    drawFilledCircle(cx - 0.03f, cy + 0.24f, 0.015f); // বাম মণি (কালো)
+    drawFilledCircle(cx + 0.03f, cy + 0.24f, 0.015f); // ডান মণি (কালো)
+    glColor3f(1.0f, 1.0f, 1.0f);
+    // চোখের চকচকে হাইলাইট বিন্দু
+    drawFilledCircle(cx - 0.035f, cy + 0.245f, 0.006f);
+    drawFilledCircle(cx + 0.025f, cy + 0.245f, 0.006f);
+
+    // ===== হাসি (বাঁকা রেখা) =====
+    glColor3f(0.60f, 0.20f, 0.20f); // গাঢ় লাল ঠোঁটের রঙ
+    glLineWidth(2.5f);
+    glBegin(GL_LINE_STRIP);
+    // 210° থেকে 330° পর্যন্ত বৃত্তের নিচের অংশ - হাসির আকৃতি
+    for (int i = 210; i <= 330; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(cx + cos(angle) * 0.025f, cy + 0.21f + sin(angle) * 0.025f);
+    }
+    glEnd();
+    glLineWidth(1.0f);
+}
+
+
+// ============================================================
+//       GENERIC HUMAN FIGURE (সাধারণ মানুষ - দোকানদার ও যাত্রী)
+// ============================================================
+
+/*
+ * drawHuman() - একটি সাধারণ মানুষের চরিত্র আঁকে
+ * Parameters:
+ *   x, y    : চরিত্রের কেন্দ্র অবস্থান
+ *   r, g, b : জামার রঙ (RGB মান)
+ *
+ * drawUser() থেকে ছোট এবং সহজ ডিজাইন।
+ * দোকানদার ও ফেরিস চাকার যাত্রীদের জন্য ব্যবহার হয়।
+ * জামার রঙ প্যারামিটার দিয়ে ভিন্ন ভিন্ন চরিত্র তৈরি করা হয়।
+ */
+void drawHuman(float x, float y, float r, float g, float b) {
+
+    // ===== শরীর (রঙিন জামা - প্যারামিটার থেকে রঙ নেওয়া হচ্ছে) =====
+    glColor3f(r, g, b); // ডায়নামিক জামার রঙ
+    glBegin(GL_QUADS);
+    // শরীর একটু ট্রাপিজিয়াম আকৃতির (কাঁধ চওড়া)
+    glVertex2f(x - 0.035f, y + 0.08f); // উপর-বাম (কাঁধ)
+    glVertex2f(x + 0.035f, y + 0.08f); // উপর-ডান (কাঁধ)
+    glVertex2f(x + 0.04f,  y);          // নিচ-ডান (কোমর)
+    glVertex2f(x - 0.04f,  y);          // নিচ-বাম (কোমর)
+    glEnd();
+
+    // জামার কালো বর্ডার (outline)
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x - 0.035f, y + 0.08f); glVertex2f(x + 0.035f, y + 0.08f);
+    glVertex2f(x + 0.04f,  y); glVertex2f(x - 0.04f,  y);
+    glEnd();
+
+    // ===== মাথা (ত্বকের রঙের বৃত্ত + কালো বর্ডার) =====
+    glColor3f(0.90f, 0.72f, 0.50f); // ত্বকের রঙ
+    drawFilledCircle(x, y + 0.12f, 0.04f);
+    glColor3f(0.0f, 0.0f, 0.0f);
+    drawCircleOutline(x, y + 0.12f, 0.04f);
+
+    // ===== চুল (ছোট সংস্করণ) =====
+    glColor3f(0.15f, 0.10f, 0.05f);
+    glBegin(GL_POLYGON);
+    for (int i = 0; i <= 180; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(x + cos(angle) * 0.041f, y + 0.13f + sin(angle) * 0.03f);
+    }
+    glEnd();
+    drawFilledCircle(x - 0.02f, y + 0.14f, 0.012f);
+    drawFilledCircle(x + 0.01f, y + 0.145f, 0.015f);
+    drawFilledCircle(x + 0.025f, y + 0.135f, 0.010f);
+
+    // ===== চোখ (দুটো কালো বিন্দু) =====
+    glPointSize(2.5f);
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_POINTS);
+    glVertex2f(x - 0.015f, y + 0.125f); // বাম চোখ
+    glVertex2f(x + 0.015f, y + 0.125f); // ডান চোখ
+    glEnd();
+
+    // ===== হাসি (ছোট বাঁকা রেখা) =====
+    glBegin(GL_LINE_STRIP);
+    for (int i = 210; i <= 330; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(x + cos(angle) * 0.02f, (y + 0.115f) + sin(angle) * 0.02f);
+    }
+    glEnd();
+
+    // ===== হাত (দুটো তির্যক কালো রেখা) =====
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+    // বাম হাত (নিচের দিকে)
+    glVertex2f(x - 0.035f, y + 0.06f); glVertex2f(x - 0.07f, y + 0.03f);
+    // ডান হাত (নিচের দিকে)
+    glVertex2f(x + 0.035f, y + 0.06f); glVertex2f(x + 0.07f, y + 0.03f);
+    glEnd();
+    glLineWidth(1.0f);
+}
+
+
+// ============================================================
+//           LEFT STALL - ফলের দোকান (বাম দিকে)
+// ============================================================
+
+/*
+ * drawLeftStall() - বাম পাশের ফলের দোকান আঁকে
+ *
+ * গঠন:
+ *   ১. দোকানদার (গোলাপি জামা)
+ *   ২. দুটো উল্লম্ব খুঁটি (বাদামি চতুর্ভুজ)
+ *   ৩. লাল ছাউনি (ট্রাপিজিয়াম + সাদা স্ট্রাইপ)
+ *   ৪. কাউন্টার (বাদামি টেবিল)
+ *   ৫. কাউন্টারের উপর ফল (আপেল, কমলা, পেয়ারা, লেবু)
+ *   ৬. নিচে বাক্স/ড্রয়ার
+ */
+void drawLeftStall() {
+    float x = LSTALL_X, y = LSTALL_Y; // বাম দোকানের কেন্দ্র অবস্থান
+
+    // দোকানদার আঁকা (গোলাপি জামা পরা)
+    drawHuman(x, y + 0.0f, 0.8f, 0.3f, 0.6f);
+
+    // ===== দুটো উল্লম্ব কাঠের খুঁটি =====
+    glColor3f(0.55f, 0.35f, 0.15f); // বাদামি কাঠের রঙ
+    // বাম খুঁটি
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.15f, y); glVertex2f(x - 0.13f, y);
+    glVertex2f(x - 0.13f, y + 0.25f); glVertex2f(x - 0.15f, y + 0.25f);
+    glEnd();
+    // ডান খুঁটি
+    glBegin(GL_QUADS);
+    glVertex2f(x + 0.13f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.15f, y + 0.25f); glVertex2f(x + 0.13f, y + 0.25f);
+    glEnd();
+
+    // ===== লাল ছাউনি (trapezoidal roof) =====
+    glColor3f(0.85f, 0.15f, 0.15f); // উজ্জ্বল লাল
+    glBegin(GL_QUADS);
+    // নিচে চওড়া, উপরে সরু - ছাউনির আকৃতি
+    glVertex2f(x - 0.22f, y + 0.25f); // নিচ-বাম (চওড়া)
+    glVertex2f(x + 0.22f, y + 0.25f); // নিচ-ডান (চওড়া)
+    glVertex2f(x + 0.15f, y + 0.40f); // উপর-ডান (সরু)
+    glVertex2f(x - 0.15f, y + 0.40f); // উপর-বাম (সরু)
+    glEnd();
+    // ছাউনির কালো বর্ডার
+    glColor3f(0.65f, 0.10f, 0.10f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x - 0.22f, y + 0.25f); glVertex2f(x + 0.22f, y + 0.25f);
+    glVertex2f(x + 0.15f, y + 0.40f); glVertex2f(x - 0.15f, y + 0.40f);
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== ছাউনির সাদা স্ট্রাইপ =====
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glLineWidth(1.5f);
+    for (float stripe = -0.12f; stripe <= 0.12f; stripe += 0.06f) {
+        glBegin(GL_LINES);
+        glVertex2f(x + stripe, y + 0.26f);           // স্ট্রাইপের নিচ
+        glVertex2f(x + stripe * 0.7f, y + 0.39f);    // স্ট্রাইপের উপর (সামান্য কাত)
+        glEnd();
+    }
+    glLineWidth(1.0f);
+
+    // ===== কাউন্টার (বিক্রয় টেবিল) =====
+    glColor3f(0.90f, 0.78f, 0.55f); // হালকা বাদামি কাঠ
+    glBegin(GL_QUADS);
+    // উপরের পাটাতন
+    glVertex2f(x - 0.15f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.20f, y - 0.15f); glVertex2f(x - 0.20f, y - 0.15f);
+    glEnd();
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP); // কাউন্টারের বর্ডার
+    glVertex2f(x - 0.15f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.20f, y - 0.15f); glVertex2f(x - 0.20f, y - 0.15f);
+    glEnd();
+
+    // ===== কাউন্টারের উপর ফল আঁকা =====
+    // ---- আপেল ----
+    glPushMatrix(); // বর্তমান matrix সংরক্ষণ
+    glTranslatef(x - 0.08f, y - 0.12f, 0.0f); // আপেলের অবস্থানে সরানো
+    glColor3f(0.7f, 0.0f, 0.0f); drawFilledCircle(0.0f, 0.0f, 0.03f); // গাঢ় লাল
+    glColor3f(1.0f, 0.2f, 0.2f); drawFilledCircle(-0.008f, 0.008f, 0.015f); // হাইলাইট
+    glColor3f(0.3f, 0.15f, 0.0f); glLineWidth(2.0f);
+    glBegin(GL_LINES); glVertex2f(0.0f, 0.025f); glVertex2f(0.01f, 0.045f); glEnd(); // বোঁটা
+    glColor3f(0.1f, 0.6f, 0.1f);
+    glBegin(GL_TRIANGLES); // পাতা
+    glVertex2f(0.01f, 0.03f); glVertex2f(0.03f, 0.04f); glVertex2f(0.02f, 0.015f);
+    glEnd();
+    glPopMatrix(); // matrix পুনরুদ্ধার
+
+    // ---- কমলা ----
+    glPushMatrix();
+    glTranslatef(x - 0.02f, y - 0.12f, 0.0f);
+    glColor3f(0.9f, 0.4f, 0.0f); drawFilledCircle(0.0f, 0.0f, 0.03f); // কমলা রঙ
+    glColor3f(1.0f, 0.6f, 0.1f); drawFilledCircle(-0.005f, 0.005f, 0.02f); // হাইলাইট
+    glColor3f(0.1f, 0.4f, 0.1f); drawFilledCircle(0.0f, 0.025f, 0.005f); // বোঁটা
+    // কমলার দাগ (texture বিন্দু)
+    glPointSize(1.5f); glColor3f(0.8f, 0.3f, 0.0f);
+    glBegin(GL_POINTS);
+    glVertex2f(0.01f, 0.01f); glVertex2f(-0.01f, -0.01f);
+    glVertex2f(0.015f, -0.01f); glVertex2f(-0.005f, 0.015f);
+    glEnd();
+    glPopMatrix();
+
+    // ---- পেয়ারা (সবুজ) ----
+    glPushMatrix();
+    glTranslatef(x + 0.04f, y - 0.12f, 0.0f);
+    glColor3f(0.2f, 0.7f, 0.1f); drawFilledCircle(0.0f, 0.0f, 0.03f); // সবুজ
+    glColor3f(0.4f, 0.9f, 0.3f); drawFilledCircle(-0.008f, 0.008f, 0.015f); // হাইলাইট
+    glColor3f(0.3f, 0.15f, 0.0f); glLineWidth(2.0f);
+    glBegin(GL_LINES); glVertex2f(0.0f, 0.025f); glVertex2f(-0.01f, 0.045f); glEnd(); // বোঁটা
+    glColor3f(0.1f, 0.5f, 0.1f);
+    glBegin(GL_TRIANGLES); // পাতা
+    glVertex2f(-0.01f, 0.03f); glVertex2f(-0.03f, 0.04f); glVertex2f(-0.02f, 0.015f);
+    glEnd();
+    glPopMatrix();
+
+    // ---- লেবু (হলুদ উপবৃত্ত) ----
+    glPushMatrix();
+    glTranslatef(x + 0.10f, y - 0.12f, 0.0f);
+    glPushMatrix();
+    glScalef(1.2f, 0.9f, 1.0f); // X দিকে বড়, Y দিকে ছোট = উপবৃত্তাকার লেবু
+    glColor3f(0.9f, 0.8f, 0.0f); drawFilledCircle(0.0f, 0.0f, 0.025f);
+    glColor3f(1.0f, 1.0f, 0.4f); drawFilledCircle(-0.005f, 0.005f, 0.015f);
+    glPopMatrix();
+    // লেবুর দুই পাশে ছোট বৃত্ত (লেবুর মাথা)
+    glColor3f(0.9f, 0.8f, 0.0f);
+    drawFilledCircle(-0.028f, 0.0f, 0.006f);
+    drawFilledCircle(0.028f, 0.0f, 0.006f);
+    glPopMatrix();
+    glLineWidth(1.0f);
+
+    // ===== নিচের স্টোরেজ বাক্স =====
+    glColor3f(0.75f, 0.60f, 0.40f);
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.20f, y - 0.15f); glVertex2f(x + 0.20f, y - 0.15f);
+    glVertex2f(x + 0.20f, y - 0.35f); glVertex2f(x - 0.20f, y - 0.35f);
+    glEnd();
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x - 0.20f, y - 0.15f); glVertex2f(x + 0.20f, y - 0.15f);
+    glVertex2f(x + 0.20f, y - 0.35f); glVertex2f(x - 0.20f, y - 0.35f);
+    glEnd();
+}
+
+
+// ============================================================
+//          RIGHT STALL - বেলুনের দোকান (ডান দিকে)
+// ============================================================
+
+/*
+ * drawRightStall() - ডান পাশের বেলুনের দোকান আঁকে
+ *
+ * গঠন:
+ *   ১. দোকানদার (সবুজ জামা)
+ *   ২. কাউন্টার বাক্স
+ *   ৩. তিনটি রঙিন বেলুন (কাউন্টারের উপরে)
+ *   ৪. একটি চাকা (সাইড ডেকোরেশন)
+ *   ৫. দুটো খুঁটি + নীল ছাউনি
+ */
+void drawRightStall() {
+    float x = RSTALL_X, y = RSTALL_Y; // ডান দোকানের কেন্দ্র
+
+    // দোকানদার আঁকা (সবুজ জামা পরা)
+    drawHuman(x, y + 0.0f, 0.2f, 0.8f, 0.4f);
+
+    // ===== কাউন্টার বাক্স =====
+    glColor3f(0.90f, 0.78f, 0.55f); // বাদামি কাঠ
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.15f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.15f, y - 0.30f); glVertex2f(x - 0.15f, y - 0.30f);
+    glEnd();
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP); // বর্ডার
+    glVertex2f(x - 0.15f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.15f, y - 0.30f); glVertex2f(x - 0.15f, y - 0.30f);
+    glEnd();
+
+    // ===== তিনটি রঙিন বেলুন =====
+    // বেলুনের রঙ (গোলাপি, নীল, হলুদ)
+    float balloonColors[3][3] = {
+        {1.0f, 0.2f, 0.5f},  // গোলাপি
+        {0.1f, 0.7f, 1.0f},  // আকাশি নীল
+        {1.0f, 0.9f, 0.1f}   // উজ্জ্বল হলুদ
+    };
+    // বেলুনের অবস্থান (বাম, মাঝ, ডান)
+    float balloonPos[3][2] = {
+        {x - 0.10f, y + 0.10f}, // বাম বেলুন (একটু উঁচুতে)
+        {x + 0.00f, y + 0.03f}, // মাঝের বেলুন (একটু নিচে)
+        {x + 0.10f, y + 0.10f}  // ডান বেলুন (একটু উঁচুতে)
+    };
+
+    for(int i = 0; i < 3; i++) {
+        glPushMatrix();
+        glTranslatef(balloonPos[i][0], balloonPos[i][1], 0.0f);
+
+        // বেলুনের সুতা (ঢেউ খেলানো রেখা)
+        glColor3f(0.9f, 0.9f, 0.9f); // হালকা ধূসর সুতা
+        glLineWidth(1.5f);
+        glBegin(GL_LINE_STRIP);
+        glVertex2f(0.0f, -0.04f);   // বেলুনের নিচের গাঁট
+        glVertex2f(-0.01f, -0.08f); // বাঁকানো সুতা
+        glVertex2f(0.01f, -0.12f);
+        glVertex2f(0.0f, y - balloonPos[i][1] - 0.15f); // কাউন্টার পর্যন্ত
+        glEnd();
+
+        // বেলুনের মূল অংশ (উপবৃত্তাকার)
+        glPushMatrix();
+        glScalef(1.0f, 1.25f, 1.0f); // লম্বাটে আকৃতি
+        // গাঢ় শেড (বাইরের স্তর)
+        glColor3f(balloonColors[i][0]*0.7f, balloonColors[i][1]*0.7f, balloonColors[i][2]*0.7f);
+        drawFilledCircle(0.0f, 0.0f, 0.035f);
+        // উজ্জ্বল রঙ (ভেতরের হাইলাইট)
+        glColor3f(balloonColors[i][0], balloonColors[i][1], balloonColors[i][2]);
+        drawFilledCircle(-0.005f, 0.005f, 0.025f);
+        glPopMatrix();
+
+        // বেলুনের নিচের গাঁট (ছোট ত্রিভুজ)
+        glColor3f(balloonColors[i][0]*0.7f, balloonColors[i][1]*0.7f, balloonColors[i][2]*0.7f);
+        glBegin(GL_TRIANGLES);
+        glVertex2f(0.0f, -0.04f);   // উপর বিন্দু
+        glVertex2f(-0.01f, -0.055f); // নিচ-বাম
+        glVertex2f(0.01f, -0.055f);  // নিচ-ডান
+        glEnd();
+
+        // বেলুনের আলোর প্রতিফলন
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glPushMatrix();
+        glScalef(1.0f, 2.0f, 1.0f);
+        drawFilledCircle(-0.015f, 0.008f, 0.005f);
+        glPopMatrix();
+
+        glPopMatrix(); // বেলুনের matrix পুনরুদ্ধার
+    }
+    glLineWidth(1.0f);
+
+    // ===== সাইড পোল (একটি উল্লম্ব রেখা) =====
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINES);
+    glVertex2f(x + 0.12f, y - 0.30f); glVertex2f(x + 0.12f, y - 0.45f);
+    glEnd();
+
+    // ===== ডেকোরেটিভ চাকা =====
+    float wx = x - 0.08f, wy = y - 0.35f, wr = 0.10f;
+    glColor3f(0.0f, 0.0f, 0.0f);
+    drawCircleOutline(wx, wy, wr); // চাকার বাইরের রিং
+    glBegin(GL_LINES);
+    // 45° পরপর ৮টি স্পোক (চাকার শলা)
+    for (int i = 0; i < 360; i += 45) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(wx, wy);                              // কেন্দ্র থেকে
+        glVertex2f(wx + cos(angle) * wr, wy + sin(angle) * wr); // রিম পর্যন্ত
+    }
+    glEnd();
+
+    // ===== দুটো খুঁটি =====
+    glColor3f(0.55f, 0.35f, 0.15f); // বাদামি কাঠ
+    glBegin(GL_QUADS);
+    // বাম খুঁটি
+    glVertex2f(x - 0.15f, y); glVertex2f(x - 0.13f, y);
+    glVertex2f(x - 0.13f, y + 0.25f); glVertex2f(x - 0.15f, y + 0.25f);
+    glEnd();
+    glBegin(GL_QUADS);
+    // ডান খুঁটি
+    glVertex2f(x + 0.13f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.15f, y + 0.25f); glVertex2f(x + 0.13f, y + 0.25f);
+    glEnd();
+
+    // ===== নীল ছাউনি (আয়তাকার - ফলের দোকান থেকে আলাদা ডিজাইন) =====
+    glColor3f(0.15f, 0.55f, 0.85f); // আকাশি নীল
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.20f, y + 0.25f); glVertex2f(x + 0.20f, y + 0.25f);
+    glVertex2f(x + 0.20f, y + 0.38f); glVertex2f(x - 0.20f, y + 0.38f);
+    glEnd();
+    glColor3f(0.10f, 0.40f, 0.65f); // গাঢ় নীল বর্ডার
+    glLineWidth(2.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x - 0.20f, y + 0.25f); glVertex2f(x + 0.20f, y + 0.25f);
+    glVertex2f(x + 0.20f, y + 0.38f); glVertex2f(x - 0.20f, y + 0.38f);
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== ছাউনির সাদা উল্লম্ব স্ট্রাইপ =====
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glLineWidth(1.5f);
+    for (float stripe = -0.16f; stripe <= 0.16f; stripe += 0.06f) {
+        glBegin(GL_LINES);
+        glVertex2f(x + stripe, y + 0.26f); // স্ট্রাইপের নিচ
+        glVertex2f(x + stripe, y + 0.37f); // স্ট্রাইপের উপর (সোজা উল্লম্ব)
+        glEnd();
+    }
+    glLineWidth(1.0f);
+}
+
+
+// ============================================================
+//          FERRIS WHEEL SUB-FUNCTIONS (ফেরিস চাকার অংশ)
+// ============================================================
+
+/*
+ * drawWheelLights() - চাকার রিমে রঙিন আলো আঁকে
+ *
+ * ১৬টি আলো সমান দূরত্বে চাকার রিমে অবস্থিত।
+ * wheelAngle যোগ করা হয় তাই চাকার সাথে ঘোরে।
+ * ৪টি রঙ পর্যায়ক্রমে (লাল, হলুদ, সবুজ, নীল)।
+ *
+ * radius = 0.38f → চাকার রেডিয়াস থেকে সামান্য ছোট (রিমে থাকে)
+ */
+void drawWheelLights() {
+    float radius = 0.38f;
+    int numLights = 16; // মোট আলোর সংখ্যা
+    for (int i = 0; i < numLights; i++) {
+        // প্রতিটি আলোর কোণ = (i * 360/16 + wheelAngle) ডিগ্রি
+        float angle = (i * 360.0f / numLights + wheelAngle) * PI / 180.0f;
+        float lx = cos(angle) * radius;
+        float ly = sin(angle) * radius;
+
+        // প্রতি ৪টি আলোয় রঙ পরিবর্তন হয়
+        switch (i % 4) {
+            case 0: glColor3f(1.0f, 0.2f, 0.2f); break; // লাল
+            case 1: glColor3f(1.0f, 1.0f, 0.2f); break; // হলুদ
+            case 2: glColor3f(0.2f, 1.0f, 0.2f); break; // সবুজ
+            case 3: glColor3f(0.2f, 0.5f, 1.0f); break; // নীল
+        }
+        drawFilledCircle(lx, ly, 0.015f); // ছোট ভরা বৃত্ত = আলো
+    }
+}
+
+/*
+ * drawWheelRim() - চাকার বাইরের রিং আঁকে
+ * গাঢ় লাল রঙের মোটা বৃত্তাকার রেখা
+ */
+void drawWheelRim() {
+    glColor3f(0.6f, 0.2f, 0.2f); // গাঢ় লাল
+    glLineWidth(3.0f);            // মোটা রেখা
+    drawCircleOutline(0.0f, 0.0f, 0.37f); // চাকার বাইরের রিং
+    glLineWidth(1.0f);
+}
+
+/*
+ * drawGondolaBox() - ফেরিস চাকার একটি গন্ডোলা (আসন বাক্স) আঁকে
+ * Parameters:
+ *   colorIndex : কোন রঙের গন্ডোলা (0-3)
+ *
+ * গন্ডোলার অংশ:
+ *   ১. কালো বর্ডার বাক্স
+ *   ২. রঙিন নিচের অংশ (আসন)
+ *   ৩. উপরে খিলান (arch) - ঝুলানোর হুক
+ *   ৪. ভেতরে একজন যাত্রী (drawHuman() দিয়ে আঁকা)
+ *
+ * ৪টি ভিন্ন রঙের গন্ডোলা (লাল, সবুজ, নীল, হলুদ)
+ * ৪জন যাত্রীর ভিন্ন জামার রঙ (সাদা, হলুদ, কমলা, আকাশি)
+ */
+void drawGondolaBox(int colorIndex) {
+    // গন্ডোলার বাক্সের রঙ
+    float boxColors[4][3] = {
+        {0.90f, 0.25f, 0.25f}, // লাল
+        {0.25f, 0.70f, 0.25f}, // সবুজ
+        {0.25f, 0.45f, 0.90f}, // নীল
+        {0.90f, 0.70f, 0.15f}  // হলুদ
+    };
+    // যাত্রীর জামার রঙ
+    float dressColors[4][3] = {
+        {1.0f, 1.0f, 1.0f},   // সাদা
+        {1.0f, 1.0f, 0.0f},   // হলুদ
+        {1.0f, 0.6f, 0.2f},   // কমলা
+        {0.2f, 0.8f, 0.9f}    // আকাশি
+    };
+
+    int ci = colorIndex % 4; // 0,1,2,3 এর মধ্যে সীমাবদ্ধ রাখে
+
+    // গন্ডোলার বাইরের কালো বর্ডার
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(-0.08f,  0.13f); // উপর-বাম
+    glVertex2f( 0.08f,  0.13f); // উপর-ডান
+    glVertex2f( 0.08f, -0.14f); // নিচ-ডান
+    glVertex2f(-0.08f, -0.14f); // নিচ-বাম
+    glEnd();
+
+    // গন্ডোলার নিচের রঙিন আসন অংশ
+    glColor3f(boxColors[ci][0], boxColors[ci][1], boxColors[ci][2]);
+    glBegin(GL_QUADS);
+    glVertex2f(-0.08f, -0.07f); glVertex2f( 0.08f, -0.07f);
+    glVertex2f( 0.08f, -0.14f); glVertex2f(-0.08f, -0.14f);
+    glEnd();
+    // আসনের কালো বর্ডার
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(-0.08f, -0.07f); glVertex2f( 0.08f, -0.07f);
+    glVertex2f( 0.08f, -0.14f); glVertex2f(-0.08f, -0.14f);
+    glEnd();
+
+    // গন্ডোলার উপরে খিলান (ঝুলানোর হুক)
+    glColor3f(0.0f, 0.0f, 0.0f);
+    drawArch(0.0f, 0.13f, 0.08f, 0.06f);
+
+    // গন্ডোলার ভেতরে যাত্রী আঁকা
+    drawHuman(0.0f, -0.07f, dressColors[ci][0], dressColors[ci][1], dressColors[ci][2]);
+}
+
+/*
+ * drawFerrisWheel() - সম্পূর্ণ ফেরিস চাকা আঁকে
+ *
+ * এই ফাংশন glPushMatrix/glPopMatrix দিয়ে ঘূর্ণন অবস্থায় কল হয়।
+ * অর্থাৎ পুরো চাকা wheelAngle দিয়ে ঘুরছে।
+ *
+ * অংশসমূহ:
+ *   ১. বাইরের রিং (drawWheelRim)
+ *   ২. দুটো ক্রস বার (অনুভূমিক ও উল্লম্ব)
+ *   ৩. রঙিন আলো (drawWheelLights)
+ *   ৪. কেন্দ্রের সোনালি বাল্ব
+ *   ৫. ৪টি গন্ডোলা (চাকার ৪ দিকে)
+ *
+ * গন্ডোলার বিশেষত্ব: চাকার সাথে ঘোরে কিন্তু নিজে সোজা থাকে
+ * (glRotatef(-wheelAngle) দিয়ে counter-rotation)
+ */
+void drawFerrisWheel() {
+    drawWheelRim(); // বাইরের লাল রিং
+
+    // ===== অনুভূমিক ক্রস বার =====
+    glColor3f(0.65f, 0.65f, 0.70f); // ধূসর ধাতু
+    glBegin(GL_QUADS);
+    glVertex2f( 0.36f,  0.015f); glVertex2f( 0.36f, -0.015f);
+    glVertex2f(-0.36f, -0.015f); glVertex2f(-0.36f,  0.015f);
+    glEnd();
+    glColor3f(0.3f, 0.3f, 0.35f);
+    glBegin(GL_LINE_LOOP); // বর্ডার
+    glVertex2f( 0.36f,  0.015f); glVertex2f( 0.36f, -0.015f);
+    glVertex2f(-0.36f, -0.015f); glVertex2f(-0.36f,  0.015f);
+    glEnd();
+
+    // ===== উল্লম্ব ক্রস বার =====
+    glColor3f(0.65f, 0.65f, 0.70f);
+    glBegin(GL_QUADS);
+    glVertex2f( 0.015f,  0.36f); glVertex2f(-0.015f,  0.36f);
+    glVertex2f(-0.015f, -0.36f); glVertex2f( 0.015f, -0.36f);
+    glEnd();
+    glColor3f(0.3f, 0.3f, 0.35f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f( 0.015f,  0.36f); glVertex2f(-0.015f,  0.36f);
+    glVertex2f(-0.015f, -0.36f); glVertex2f( 0.015f, -0.36f);
+    glEnd();
+
+    drawWheelLights(); // রঙিন আলো
+
+    // ===== কেন্দ্রের সোনালি বাল্ব =====
+    glColor3f(0.85f, 0.75f, 0.20f); // সোনালি
+    drawFilledCircle(0.0f, 0.0f, 0.045f); // বড় সোনালি বৃত্ত
+    glColor3f(0.6f, 0.5f, 0.1f);
+    drawCircleOutline(0.0f, 0.0f, 0.045f); // বর্ডার
+    glColor3f(0.95f, 0.85f, 0.3f);
+    drawFilledCircle(0.0f, 0.0f, 0.02f); // ছোট উজ্জ্বল কেন্দ্র
+
+    // ===== ৪টি গন্ডোলা (চাকার ৪ দিকে) =====
+    // গন্ডোলার অবস্থান: ডান, বাম, উপর, নিচ
+    float gondolaPos[4][2] = {
+        { 0.36f,  0.00f}, // ডান
+        {-0.36f,  0.00f}, // বাম
+        { 0.00f,  0.36f}, // উপর
+        { 0.00f, -0.36f}  // নিচ
+    };
+
+    for (int i = 0; i < 4; i++) {
+        glPushMatrix();
+        glTranslatef(gondolaPos[i][0], gondolaPos[i][1], 0.0f); // গন্ডোলার অবস্থানে যাও
+
+        /*
+         * counter-rotation: চাকা wheelAngle দিয়ে ঘুরছে,
+         * গন্ডোলাকে -wheelAngle দিয়ে উল্টো ঘোরানো হচ্ছে,
+         * ফলে গন্ডোলা সবসময় সোজা (সিধা) থাকে - বাস্তব ফেরিস চাকার মতো!
+         */
+        glRotatef(-wheelAngle, 0, 0, 1);
+
+        // ঝুলানোর তার (গন্ডোলা থেকে চাকার সংযোগ)
+        glColor3f(0.3f, 0.3f, 0.3f);
+        glLineWidth(2.0f);
+        glBegin(GL_LINES);
+        glVertex2f(0.0f,  0.00f); // চাকার সাথে সংযোগ বিন্দু
+        glVertex2f(0.0f, -0.06f); // গন্ডোলার উপরে
+        glEnd();
+        glLineWidth(1.0f);
+
+        glTranslatef(0.0f, -0.25f, 0.0f); // গন্ডোলাকে একটু নিচে নামাও
+        drawGondolaBox(i); // গন্ডোলা আঁকো
+        glPopMatrix();
+    }
+}
+
+/*
+ * drawFerrisStand() - ফেরিস চাকার খুঁটি/স্ট্যান্ড আঁকে
+ *
+ * গঠন:
+ *   ১. দুটো তির্যক পা (inverted V আকৃতি)
+ *   ২. মাঝখানে একটি অনুভূমিক সংযোগ বার
+ *   ৩. নিচে একটি চওড়া বেস প্লেট
+ */
+void drawFerrisStand() {
+    float standTop    = WCY;        // চাকার কেন্দ্রের উচ্চতায় শুরু
+    float standBottom = LINE_MIDDLE; // মাটিতে শেষ
+
+    // ===== দুটো তির্যক পা =====
+    glColor3f(0.4f, 0.4f, 0.45f); // ধূসর ধাতু
+    glBegin(GL_QUADS);
+    // বাম পা (উপরে চিকন, নিচে চওড়া হয়ে বামে যায়)
+    glVertex2f(WCX - 0.02f, standTop); glVertex2f(WCX + 0.01f, standTop);
+    glVertex2f(WCX - 0.12f, standBottom); glVertex2f(WCX - 0.15f, standBottom);
+    // ডান পা
+    glVertex2f(WCX - 0.01f, standTop); glVertex2f(WCX + 0.02f, standTop);
+    glVertex2f(WCX + 0.15f, standBottom); glVertex2f(WCX + 0.12f, standBottom);
+    glEnd();
+
+    // পায়ের বর্ডার
+    glColor3f(0.2f, 0.2f, 0.25f);
+    glLineWidth(1.5f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(WCX - 0.02f, standTop); glVertex2f(WCX + 0.01f, standTop);
+    glVertex2f(WCX - 0.12f, standBottom); glVertex2f(WCX - 0.15f, standBottom);
+    glEnd();
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(WCX - 0.01f, standTop); glVertex2f(WCX + 0.02f, standTop);
+    glVertex2f(WCX + 0.15f, standBottom); glVertex2f(WCX + 0.12f, standBottom);
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== মাঝের অনুভূমিক সংযোগ বার =====
+    float midY = (standTop + standBottom) / 2.0f; // দুই পায়ের মাঝামাঝি উচ্চতা
+    glColor3f(0.35f, 0.35f, 0.40f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+    glVertex2f(WCX - 0.08f, midY); // বাম দিক
+    glVertex2f(WCX + 0.08f, midY); // ডান দিক
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== নিচের বেস প্লেট =====
+    glColor3f(0.3f, 0.3f, 0.35f);
+    glBegin(GL_QUADS);
+    glVertex2f(WCX - 0.18f, standBottom);          // উপর-বাম
+    glVertex2f(WCX + 0.18f, standBottom);          // উপর-ডান
+    glVertex2f(WCX + 0.18f, standBottom - 0.03f);  // নিচ-ডান
+    glVertex2f(WCX - 0.18f, standBottom - 0.03f);  // নিচ-বাম
+    glEnd();
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(WCX - 0.18f, standBottom); glVertex2f(WCX + 0.18f, standBottom);
+    glVertex2f(WCX + 0.18f, standBottom - 0.03f); glVertex2f(WCX - 0.18f, standBottom - 0.03f);
+    glEnd();
+}
+
+
+// ============================================================
+//          NOTIFICATION BOX (কেনার বিজ্ঞপ্তি বাক্স)
+// ============================================================
+
+/*
+ * drawNotification() - দোকানের কাছে গেলে কেনার বিজ্ঞপ্তি দেখায়
+ *
+ * আধা-স্বচ্ছ কালো বাক্সে "Buy Item? (Y/N)" লেখা দেখায়।
+ * GL_BLEND দিয়ে transparency তৈরি করা হয়।
+ * glutBitmapCharacter() দিয়ে প্রতিটি অক্ষর আঁকা হয়।
+ */
+void drawNotification() {
+    // Transparency চালু
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // ===== আধা-স্বচ্ছ কালো পটভূমি =====
+    glColor4f(0.1f, 0.1f, 0.1f, 0.85f); // 85% অপ্যাক কালো
+    glBegin(GL_QUADS);
+    glVertex2f(-0.25f, 0.85f); glVertex2f( 0.25f, 0.85f);
+    glVertex2f( 0.25f, 0.72f); glVertex2f(-0.25f, 0.72f);
+    glEnd();
+
+    // ===== সাদা বর্ডার =====
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(-0.25f, 0.85f); glVertex2f( 0.25f, 0.85f);
+    glVertex2f( 0.25f, 0.72f); glVertex2f(-0.25f, 0.72f);
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== হলুদ টেক্সট =====
+    glColor3f(1.0f, 1.0f, 0.0f); // উজ্জ্বল হলুদ
+    glRasterPos2f(-0.18f, 0.77f); // টেক্সটের শুরুর অবস্থান
+    const char* msg = "Buy Item? (Y/N)";
+    // প্রতিটি অক্ষর আলাদাভাবে আঁকা হচ্ছে
+    for (const char* c = msg; *c != '\0'; c++) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+    }
+    glDisable(GL_BLEND); // transparency বন্ধ
+}
+
+
+// ============================================================
+//              MAIN DISPLAY FUNCTION (প্রধান প্রদর্শন ফাংশন)
+// ============================================================
+
+/*
+ * display() - প্রতিটি ফ্রেমে সবকিছু আঁকে
+ *
+ * এটি OpenGL এর callback function - GLUT স্বয়ংক্রিয়ভাবে কল করে।
+ * আঁকার ক্রম (Z-order) গুরুত্বপূর্ণ - পরে আঁকা জিনিস উপরে দেখায়।
+ *
+ * আঁকার ক্রম (পিছন থেকে সামনে):
+ *   ১. আকাশ (সবচেয়ে পিছনে)
+ *   ২. সূর্য/চাঁদ, তারা
+ *   ৩. মেঘ
+ *   ৪. গাছ
+ *   ৫. মাটি, পথ, ঘাস
+ *   ৬. রাতের অন্ধকার স্তর
+ *   ৭. দোকান (বাম ও ডান)
+ *   ৮. ফেরিস চাকা (স্ট্যান্ড + ঘূর্ণায়মান চাকা)
+ *   ৯. ব্যবহারকারীর চরিত্র (সবচেয়ে সামনে)
+ *   ১০. নোটিফিকেশন বাক্স (যদি দরকার হয়)
+ *
+ * Interaction Logic:
+ *   - nearLeft/nearRight: চরিত্র দোকানের কাছে কিনা পরীক্ষা করে
+ *   - askedLeft/askedRight: একবারের বেশি জিজ্ঞেস না করার জন্য
+ */
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT); // স্ক্রিন পরিষ্কার করো
+
+    // ===== দোকানের কাছাকাছি কিনা পরীক্ষা =====
+    // বাম দোকানের কাছে: X -0.95 থেকে -0.45 এবং Y -0.30 এর উপরে
+    bool nearLeft  = (userX > -0.95f && userX < -0.45f && userY > -0.30f);
+    // ডান দোকানের কাছে: X 0.45 থেকে 0.95 এবং Y -0.30 এর উপরে
+    bool nearRight = (userX > 0.45f && userX < 0.95f && userY > -0.30f);
+
+    // দোকানের কাছে গেলে এবং আগে জিজ্ঞেস না করলে নোটিফিকেশন দেখাও
+    if (!askedLeft && nearLeft) {
+        showNotification = true;
+        currentShop = 1; // বাম দোকান
+    } else if (!askedRight && nearRight) {
+        showNotification = true;
+        currentShop = 2; // ডান দোকান
+    }
+
+    // দোকান থেকে দূরে গেলে নোটিফিকেশন লুকাও
+    if (!nearLeft && currentShop == 1)  showNotification = false;
+    if (!nearRight && currentShop == 2) showNotification = false;
+
+    // ===== দৃশ্যপট আঁকার ক্রম =====
+    drawSky();          // ১. আকাশ (পটভূমি)
+    drawSunOrMoon();    // ২. সূর্য বা চাঁদ
+    drawStars();        // ৩. তারা (শুধু রাতে)
+    drawClouds();       // ৪. মেঘ (অ্যানিমেটেড)
+    drawTrees();        // ৫. গাছ
+    drawGround();       // ৬. মাটির স্তর
+    drawPathway();      // ৭. পথ
+    drawGrassBlades();  // ৮. ঘাসের পাতা
+    drawNightOverlay(); // ৯. রাতের অন্ধকার স্তর (রাতে)
+
+    drawLeftStall();    // ১০. বাম ফলের দোকান
+    drawRightStall();   // ১১. ডান বেলুনের দোকান
+
+    drawFerrisStand();  // ১২. ফেরিস চাকার স্ট্যান্ড
+
+    // ফেরিস চাকা ঘূর্ণায়মান অবস্থায় আঁকা
+    glPushMatrix();                          // বর্তমান matrix সংরক্ষণ
+    glTranslatef(WCX, WCY, 0.0f);           // চাকার কেন্দ্রে স্থানান্তর
+    glRotatef(wheelAngle, 0, 0, 1);         // Z-অক্ষে wheelAngle দিয়ে ঘোরানো
+    drawFerrisWheel();                       // চাকা আঁকা
+    glPopMatrix();                           // matrix পুনরুদ্ধার
+
+    drawUser(userX, userY); // ১৩. ব্যবহারকারীর চরিত্র (সবচেয়ে সামনে)
+
+    // নোটিফিকেশন দেখানো (সবার উপরে)
+    if (showNotification) drawNotification();
+
+    glutSwapBuffers(); // Double buffering - ঝাঁকুনি ছাড়া মসৃণ অ্যানিমেশন
+}
+
+
+// ============================================================
+//           INPUT & ANIMATION CALLBACKS
+//           ইনপুট ও অ্যানিমেশন কলব্যাক ফাংশন
+// ============================================================
+
+/*
+ * keyboard() - সাধারণ কীবোর্ড ইনপুট পরিচালনা করে
+ * Parameters:
+ *   key  : চাপা হওয়া অক্ষরের ASCII কোড
+ *   x, y : মাউসের অবস্থান (এখানে ব্যবহার হয়নি)
+ *
+ * D/d → দিনের মোড
+ * N/n → রাতের মোড (নোটিফিকেশন না থাকলে)
+ * Y/y → দোকান থেকে কিনুন
+ * R/r → দোকান থেকে কিনবেন না
+ *
+
+ * তাই showNotification চেক করে কোন কাজ করবে ঠিক করা হয়
+ */
+void keyboard(unsigned char key, int x, int y) {
+    if (key == 'D' || key == 'd') {
+        isDayMode = true;  // দিনের মোড চালু
+    } else if (key == 'N' || key == 'n') {
+        isDayMode = false; // রাতের মোড চালু
+    } else if (showNotification) {
+        // নোটিফিকেশন দেখা অবস্থায় Y বা N চাপলে
+        if (key == 'y' || key == 'Y') {
+            // হ্যাঁ - জিনিস কিনুন
+            if (currentShop == 1) {
+                hasLeftItem = true;   // ফল কিনলাম
+                askedLeft = true;     // আর জিজ্ঞেস করবো না
+            } else if (currentShop == 2) {
+                hasRightItem = true;  // বেলুন কিনলাম
+                askedRight = true;    // আর জিজ্ঞেস করবো না
+            }
+            showNotification = false; // নোটিফিকেশন বন্ধ
+        } else if (key == 'r' || key == 'R') {
+            // না - জিনিস কিনবো না
+            if (currentShop == 1) askedLeft = true;   // আর জিজ্ঞেস করবো না
+            else if (currentShop == 2) askedRight = true;
+            showNotification = false; // নোটিফিকেশন বন্ধ
+        }
+    }
+    glutPostRedisplay(); // স্ক্রিন পুনরায় আঁকার অনুরোধ
+}
+
+/*
+ * specialKeys() - বিশেষ কী (Arrow Keys) পরিচালনা করে
+ *
+ * Arrow Keys দিয়ে চরিত্র নাড়ানো হয়।
+ * চরিত্রের চলাচলের সীমা নির্ধারণ করা আছে:
+ *   X সীমা: -0.90 থেকে 0.90 (স্ক্রিনের মধ্যে)
+ *   Y সীমা: -0.47 থেকে -0.07 (মাটির স্তরে)
+ */
+void specialKeys(int key, int x, int y) {
+    if (key == GLUT_KEY_LEFT)  userX -= USER_SPEED; // বামে যাও
+    if (key == GLUT_KEY_RIGHT) userX += USER_SPEED; // ডানে যাও
+    if (key == GLUT_KEY_UP)    userY += USER_SPEED; // উপরে যাও
+    if (key == GLUT_KEY_DOWN)  userY -= USER_SPEED; // নিচে যাও
+
+    // X অক্ষের সীমা (স্ক্রিনের বাইরে যাবে না)
+    if (userX < -0.90f) userX = -0.90f;
+    if (userX >  0.90f) userX =  0.90f;
+
+    // Y অক্ষের সীমা (মাটির স্তরে থাকবে)
+    if (userY < -0.47f) userY = -0.47f; // নিচের সীমা
+    if (userY > -0.07f) userY = -0.07f; // উপরের সীমা
+
+    glutPostRedisplay(); // স্ক্রিন পুনরায় আঁকার অনুরোধ
+}
+
+/*
+ * timer() - নির্দিষ্ট সময় পরপর অ্যানিমেশন আপডেট করে
+ *
+ * TIMER_MS (20ms) = প্রতি সেকেন্ডে 50 ফ্রেম (50 FPS)
+ *
+ * প্রতি কলে:
+ *   ১. wheelAngle কমানো → চাকা ঘড়ির বিপরীতে ঘোরে
+ *   ২. cloudOffset বাড়ানো → মেঘ ডান দিকে সরে
+ *   ৩. glutPostRedisplay() → পরের ফ্রেম আঁকার অনুরোধ
+ *   ৪. glutTimerFunc() → পরের কল নির্ধারণ (পুনরাবৃত্তি)
+ */
+void timer(int) {
+    wheelAngle -= WHEEL_SPEED; // চাকা ঘড়ির বিপরীতে ঘোরে (negative = anti-clockwise)
+    if (wheelAngle < -360.0f) wheelAngle += 360.0f; // -360 এর কম হলে রিসেট
+
+    cloudOffset += CLOUD_SPEED; // মেঘ ধীরে ধীরে ডানে সরে
+
+    glutPostRedisplay();              // স্ক্রিন পুনরায় আঁকার অনুরোধ
+    glutTimerFunc(TIMER_MS, timer, 0); // TIMER_MS পরে আবার কল করো
+}
+
+
+// ============================================================
+//                    MAIN FUNCTION (প্রধান ফাংশন)
+// ============================================================
+
+/*
+ * main() - প্রোগ্রামের শুরু
+ *
+ * ধাপসমূহ:
+ *   ১. glutInit()           → GLUT শুরু করো
+ *   ২. glutInitDisplayMode() → Double buffer (মসৃণ অ্যানিমেশন) + RGB রঙ মোড
+ *   ③. glutInitWindowSize()  → 1000x700 পিক্সেলের উইন্ডো
+ *   ৪. glutCreateWindow()    → উইন্ডো তৈরি করো
+ *   ৫. glEnable(GL_BLEND)   → Transparency সক্রিয় করো
+ *   ৬. Callback functions নিবন্ধন করো
+ *   ৭. glutMainLoop()        → GLUT ইভেন্ট লুপ শুরু (অসীম লুপ)
+ *
+ * Double Buffering কেন?
+ *   Single buffer হলে আঁকার সময় স্ক্রিনে ঝাঁকুনি দেখা যায়।
+ *   Double buffer = একটি buffer এ আঁকো, অন্যটি দেখাও, তারপর বদলাও।
+ *   glutSwapBuffers() দিয়ে দুটো buffer বদলানো হয়।
+ */
+int main(int argc, char** argv) {
+    glutInit(&argc, argv);                              // GLUT প্রাথমিক সেটআপ
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);        // Double buffer + RGB মোড
+    glutInitWindowSize(900, 600);                      // উইন্ডো আকার: 1000×700
+    glutCreateWindow("Interactive Village Fair - Graphics Project"); // উইন্ডো তৈরি
+
+    // Transparency (স্বচ্ছতা) সক্রিয় করা
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // আলফা মিশ্রণ পদ্ধতি
+
+    // ===== Callback Functions নিবন্ধন =====
+    glutDisplayFunc(display);      // স্ক্রিন আঁকার ফাংশন
+    glutKeyboardFunc(keyboard);    // সাধারণ কী চাপার ফাংশন
+    glutSpecialFunc(specialKeys);  // বিশেষ কী (Arrow) চাপার ফাংশন
+    glutTimerFunc(0, timer, 0);    // অ্যানিমেশন টাইমার (0ms পরে প্রথম কল)
+
+    glutMainLoop(); // GLUT ইভেন্ট লুপ শুরু (প্রোগ্রাম এখানে আটকে থাকে)
+    return 0;       // প্রোগ্রাম শেষ (এই লাইনে কখনো পৌঁছায় না)
+}
