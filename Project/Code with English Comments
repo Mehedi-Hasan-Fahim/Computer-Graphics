@@ -1,0 +1,1631 @@
+/*
+ * ============================================================
+ * PROJECT: Interactive Village Fair - OpenGL Graphics Project
+ *
+ * LIBRARIES USED (LIBRARIES USED):
+ *   - windows.h  : Required header for Windows OS
+ *   - GL/glut.h  : OpenGL Utility Toolkit - window creation and input handling
+ *   - math.h     : for mathematical functions sin(), cos()
+ *
+ * CONTROLS (CONTROLS):
+ *   Arrow Keys   : Move character (up/down/left/right)
+ *   D key        : Enable Day mode
+ *   N key        : Enable Night mode
+ *   Y key        : Buy items from shop (Yes)
+ *   R key        : Do not buy items from shop (No)
+ * ============================================================
+ */
+
+#include <windows.h>   // Windows API header file
+#include <GL/glut.h>   // OpenGL + GLUT header file
+#include <math.h>      // For mathematical functions (sin, cos)
+
+// Defining the value of PI (for converting degrees to radians)
+#define PI 3.14159265
+
+
+// ============================================================
+//          GLOBAL CONFIGURATION SETTINGS
+//          (These variables are used throughout the program)
+// ============================================================
+
+// --- Day/Night Mode (Day/Night Mode) ---
+// true = Day, false = Night
+bool isDayMode = true; // Day mode is enabled at start
+
+// --- Wheel Animation (Wheel Animation) ---
+float wheelAngle = 0.0f;         // Current angle of the wheel (in degrees)
+const float WHEEL_SPEED = 1.0f;  // How much it rotates per frame
+const int   TIMER_MS    = 20;    // Updates once every 20 milliseconds
+
+// --- Cloud Animation (Cloud Animation) ---
+float cloudOffset = 0.0f;          // How much the cloud has moved (along the X-axis)
+const float CLOUD_SPEED = 0.0003f; // Cloud speed (per frame)
+
+// --- Interactive User Position (Interactive User Position) ---
+float userX         = -0.4f;       // Character's X position (left-right of screen)
+float userY         = -0.45f;      // Character's Y position (up-down of screen)
+const float USER_SPEED = 0.05f;    // Character's movement speed
+
+// --- Ferris Wheel Center (Ferris Wheel Center) ---
+const float WCX = 0.0f;  // X position of wheel center (middle of screen)
+const float WCY = 0.4f;  // Y position of wheel center (towards the top)
+
+// --- Ground Dividing Lines (Ground Dividing Lines) ---
+// The screen is divided using these Y values
+const float LINE_TOP    =  0.45f; // Boundary between sky and ground (start of green grass)
+const float LINE_MIDDLE = -0.4f;  // Boundary between green and brown ground
+const float LINE_BOTTOM = -0.8f;  // Boundary between brown and dark brown
+
+// --- Left Stall Position (Left Stall Position) ---
+const float LSTALL_X = -0.7f; // X position of left stall
+const float LSTALL_Y = -0.05f; // Y position of left stall
+
+// --- Right Stall Position (Right Stall Position) ---
+const float RSTALL_X =  0.7f;  // X position of right stall
+const float RSTALL_Y = 0.05f;  // Y position of right stall
+
+// --- Interaction & Inventory (Interaction & Inventory) ---
+bool showNotification = false; // Whether to show buy notification
+int  currentShop = 0;          // Which shop is currently active (1=Left, 2=Right)
+bool askedLeft = false;        // Whether question was asked in left shop
+bool askedRight = false;       // Whether question was asked in right shop
+bool hasLeftItem = false;      // Whether fruit was bought from left shop
+bool hasRightItem = false;     // Whether balloon was bought from right shop
+
+
+// ============================================================
+//              PRIMITIVE HELPER FUNCTIONS
+//              (Reusable functions for drawing circles, arches)
+// ============================================================
+
+/*
+ * drawFilledCircle() - Draws a filled circle
+ * Parameters (Parameters):
+ *   cx, cy : X and Y coordinates of the circle's center
+ *   r      : Radius of the circle
+ *
+ * Task: Creates a filled circle using 360 points with GL_POLYGON
+ * cos(angle) = distance in X direction, sin(angle) = distance in Y direction
+ */
+void drawFilledCircle(float cx, float cy, float r) {
+    glBegin(GL_POLYGON); // Start drawing filled polygon
+    for (int i = 0; i < 360; i++) {
+        // Determine points by converting each degree to radians
+        float angle = i * PI / 180.0f;
+        glVertex2f(cx + cos(angle) * r, cy + sin(angle) * r);
+    }
+    glEnd(); // Drawing finished
+}
+
+/*
+ * drawCircleOutline() - Draws an empty circle (border only)
+ * Parameters: Same as drawFilledCircle()
+ *
+ * GL_LINE_LOOP: Closes the line by returning from the last point to the first
+ */
+void drawCircleOutline(float cx, float cy, float r) {
+    glBegin(GL_LINE_LOOP); // Start drawing closed line loop
+    for (int i = 0; i < 360; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(cx + cos(angle) * r, cy + sin(angle) * r);
+    }
+    glEnd();
+}
+
+/*
+ * drawArch() - Draws a semi-circular arch
+ * Parameters:
+ *   cx, cy         : Center point
+ *   radiusX        : Horizontal radius (width)
+ *   radiusY        : Vertical radius (height)
+ *
+ * Task: Draws from 0° to 180° (top half)
+ * Used to draw the hanging hook above the gondola roof
+ */
+void drawArch(float cx, float cy, float radiusX, float radiusY) {
+    glBegin(GL_LINE_STRIP); // Start drawing connected lines
+    for (int i = 0; i <= 180; i++) {
+        float angle = i * PI / 180.0f;
+        // Ellipse formula: x = cx + radiusX*cos(angle), y = cy + radiusY*sin(angle)
+        glVertex2f(cx + cos(angle) * radiusX, cy + sin(angle) * radiusY);
+    }
+    glEnd();
+
+    // A small vertical line above the arch (like a hanging hook)
+    glBegin(GL_LINES);
+    glVertex2f(cx, cy + radiusY);          // Bottom point of the hook
+    glVertex2f(cx, cy + radiusY + 0.02f);  // Top point of the hook
+    glEnd();
+}
+
+
+// ============================================================
+//            SKY DRAWING (Sky Drawing - Day and Night)
+// ============================================================
+
+/*
+ * drawSky() - Draws the sky
+ *
+ * A quadrilateral is drawn using four corner points with GL_QUADS.
+ * Day: Dark blue (top) to light blue (bottom) - gradient effect
+ * Night: Dark black-blue to slightly lighter blue
+ *
+ * In OpenGL, setting color before each vertex creates a gradient (slow color change)
+ */
+void drawSky() {
+    glBegin(GL_QUADS);
+    if (isDayMode) {
+        // Day sky: Dark blue at top
+        glColor3f(0.15f, 0.35f, 0.75f);
+        glVertex2f(-1.0f, 1.0f);  // Top-left corner
+        glVertex2f( 1.0f, 1.0f);  // Top-right corner
+        // Light sky blue at bottom (creates gradient)
+        glColor3f(0.55f, 0.78f, 0.95f);
+        glVertex2f( 1.0f, LINE_TOP); // Bottom-right corner
+        glVertex2f(-1.0f, LINE_TOP); // Bottom-left corner
+    } else {
+        // Night sky: Almost black at top
+        glColor3f(0.02f, 0.05f, 0.15f);
+        glVertex2f(-1.0f, 1.0f);
+        glVertex2f( 1.0f, 1.0f);
+        // Slightly lighter blue at bottom
+        glColor3f(0.1f, 0.15f, 0.3f);
+        glVertex2f( 1.0f, LINE_TOP);
+        glVertex2f(-1.0f, LINE_TOP);
+    }
+    glEnd();
+}
+
+
+// ============================================================
+//           CLOUD DRAWING (Cloud Drawing - Day and Night)
+// ============================================================
+
+/*
+ * drawSingleCloud() - Draws a single cloud
+ * Parameters:
+ *   cx, cy : Cloud center position
+ *   scale  : Cloud size multiplier (to make larger/smaller)
+ *
+ * Task: Creates a cotton-like cloud using 5 filled circles
+ * Shows white clouds during day, gray clouds during night
+ */
+void drawSingleCloud(float cx, float cy, float scale) {
+    // Determine cloud color based on day/night
+    if (isDayMode) {
+        glColor4f(1.0f, 1.0f, 1.0f, 1.0f); // White cloud, 100% opaque
+    } else {
+        glColor4f(0.35f, 0.35f, 0.45f, 0.9f); // Gray-blue cloud
+    }
+    // Large circle in the middle of the cloud
+    drawFilledCircle(cx,              cy,             0.06f * scale);
+    // Medium circles on left and right of cloud
+    drawFilledCircle(cx - 0.05f*scale, cy - 0.01f*scale, 0.045f * scale);
+    drawFilledCircle(cx + 0.05f*scale, cy - 0.01f*scale, 0.045f * scale);
+    // Small circles on top of cloud (fluffy texture)
+    drawFilledCircle(cx - 0.03f*scale, cy + 0.03f*scale, 0.04f * scale);
+    drawFilledCircle(cx + 0.03f*scale, cy + 0.03f*scale, 0.04f * scale);
+}
+
+/*
+ * drawClouds() - Draws all clouds and handles animation
+ *
+ * Clouds are moved from right to left by adding cloudOffset.
+ * Wraps around when going off-screen (comes back from the right side)
+ *
+ * positions[][3] = {X position, Y position, size multiplier}
+ */
+void drawClouds() {
+    float wrap = 2.4f; // How much to move before restarting
+
+    // Initial positions and sizes of 5 clouds
+    float positions[][3] = {
+        {-0.7f, 0.85f, 1.0f},  // Cloud 1: Left side, normal size
+        {-0.2f, 0.75f, 1.3f},  // Cloud 2: Mid-left, slightly larger
+        { 0.3f, 0.90f, 0.9f},  // Cloud 3: Mid-right, slightly smaller
+        { 0.7f, 0.78f, 1.1f},  // Cloud 4: Right, medium large
+        { 0.0f, 0.95f, 0.8f}   // Cloud 5: Middle, small
+    };
+
+    for (int i = 0; i < 5; i++) {
+        // Moving cloud by adding cloudOffset
+        float x = positions[i][0] + cloudOffset;
+        // If past right screen boundary, restart from left
+        while (x > 1.3f)  x -= wrap;
+        // If outside left screen boundary, restart from right
+        while (x < -1.1f) x += wrap;
+        drawSingleCloud(x, positions[i][1], positions[i][2]);
+    }
+}
+
+
+// ============================================================
+//          SUN / MOON DRAWING (Sun or Moon Drawing)
+// ============================================================
+
+/*
+ * drawSunOrMoon() - Draws sun in day, moon in night
+ *
+ * Sun: Yellow circle + surrounding rays (thick lines using glLineWidth)
+ *        Rays are drawn from 0° to 330° at 30° intervals
+ *
+ * Moon: White circle + small circles on top (to show craters)
+ */
+void drawSunOrMoon() {
+    float sx = -0.8f, sy = 0.88f; // Sun/Moon position (top-left corner)
+
+    if (isDayMode) {
+        // ========== Drawing Sun ==========
+        glColor3f(1.0f, 0.85f, 0.3f); // Golden yellow color
+        glLineWidth(2.0f); // Thick line
+
+        // Drawing sun rays (12 rays, 30° intervals)
+        for (int i = 0; i < 360; i += 30) {
+            float angle = i * PI / 180.0f;
+            glBegin(GL_LINES);
+            // Inner point of ray (on circle)
+            glVertex2f(sx + cos(angle) * 0.07f, sy + sin(angle) * 0.07f);
+            // Outer point of ray (outside circle)
+            glVertex2f(sx + cos(angle) * 0.11f, sy + sin(angle) * 0.11f);
+            glEnd();
+        }
+        glLineWidth(1.0f); // Back to normal line width
+
+        // Yellow filled circle at sun's center
+        glColor3f(1.0f, 0.92f, 0.2f);
+        drawFilledCircle(sx, sy, 0.065f);
+        // Dark yellow border of sun
+        glColor3f(1.0f, 0.7f, 0.0f);
+        drawCircleOutline(sx, sy, 0.065f);
+    } else {
+        // ========== Drawing Moon ==========
+        // White-gray filled circle (full moon)
+        glColor3f(0.9f, 0.9f, 0.95f);
+        drawFilledCircle(sx, sy, 0.065f);
+
+        // Drawing moon craters - 3 small gray circles
+        glColor3f(0.75f, 0.75f, 0.8f);
+        drawFilledCircle(sx - 0.015f, sy + 0.015f, 0.015f); // Large crater
+        drawFilledCircle(sx + 0.020f, sy - 0.020f, 0.010f); // Medium crater
+        drawFilledCircle(sx + 0.015f, sy + 0.025f, 0.008f); // Small crater
+    }
+}
+
+
+// ============================================================
+//           STARS DRAWING (Stars Drawing - Night only)
+// ============================================================
+
+/*
+ * drawStars() - Draws stars in night sky
+ *
+ * If isDayMode is true, function returns immediately (stars not shown)
+ * Points (stars) are drawn at specific positions using GL_POINTS
+ * Point size is determined using glPointSize(2.5f)
+ */
+void drawStars() {
+    if (isDayMode) return; // Stars will not show during day
+
+    glColor3f(1.0f, 1.0f, 0.8f); // Light yellowish-white color
+    glPointSize(2.5f);            // Star size
+    glBegin(GL_POINTS);
+    // Positions of 9 stars (manually set)
+    glVertex2f( 0.5f,  0.92f); glVertex2f( 0.65f, 0.97f);
+    glVertex2f( 0.85f, 0.88f); glVertex2f(-0.45f, 0.95f);
+    glVertex2f(-0.55f, 0.80f); glVertex2f( 0.15f, 0.98f);
+    glVertex2f( 0.92f, 0.95f); glVertex2f(-0.25f, 0.85f);
+    glVertex2f(-0.15f, 0.92f);
+    glEnd();
+}
+
+
+// ============================================================
+//          GROUND LAYERS (Ground Layers - Different colors)
+// ============================================================
+
+/*
+ * drawGround() - Draws different layers of the ground
+ *
+ * 3 layers are drawn:
+ *   Layer 1: LINE_TOP to LINE_MIDDLE -> Green grass
+ *   Layer 2: LINE_MIDDLE to LINE_BOTTOM -> Brown soil
+ *   Layer 3: LINE_BOTTOM to -1.0 -> Dark brown deep soil
+ *
+ * Finally, two dark lines separate the layers
+ */
+void drawGround() {
+    // ===== Layer 1: Green grass (top layer) =====
+    glBegin(GL_QUADS);
+    glColor3f(0.35f, 0.70f, 0.25f); // Dark green (top)
+    glVertex2f(-1.0f, LINE_TOP); glVertex2f( 1.0f, LINE_TOP);
+    glColor3f(0.45f, 0.80f, 0.30f); // Light green (bottom) - gradient
+    glVertex2f( 1.0f, LINE_MIDDLE); glVertex2f(-1.0f, LINE_MIDDLE);
+    glEnd();
+
+    // ===== Layer 2: Brown soil (middle layer) =====
+    glBegin(GL_QUADS);
+    glColor3f(0.72f, 0.55f, 0.30f); // Light brown (top)
+    glVertex2f(-1.0f, LINE_MIDDLE); glVertex2f( 1.0f, LINE_MIDDLE);
+    glColor3f(0.60f, 0.45f, 0.25f); // Slightly darker brown (bottom)
+    glVertex2f( 1.0f, LINE_BOTTOM); glVertex2f(-1.0f, LINE_BOTTOM);
+    glEnd();
+
+    // ===== Layer 3: Dark brown (bottom layer) =====
+    glBegin(GL_QUADS);
+    glColor3f(0.45f, 0.35f, 0.20f); // Dark brown (top)
+    glVertex2f(-1.0f, LINE_BOTTOM); glVertex2f( 1.0f, LINE_BOTTOM);
+    glColor3f(0.35f, 0.25f, 0.15f); // Even darker (bottom)
+    glVertex2f( 1.0f, -1.0f); glVertex2f(-1.0f, -1.0f);
+    glEnd();
+
+    // ===== Layer separating lines =====
+    glColor3f(0.2f, 0.15f, 0.05f); // Black-brown line
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+    // Middle separating line
+    glVertex2f(-1.0f, LINE_MIDDLE); glVertex2f(1.0f, LINE_MIDDLE);
+    // Bottom separating line
+    glVertex2f(-1.0f, LINE_BOTTOM); glVertex2f(1.0f, LINE_BOTTOM);
+    glEnd();
+    glLineWidth(1.0f);
+}
+
+/*
+ * drawGrassBlades() - Draws grass blades
+ *
+ * Grass blades are drawn upwards from LINE_MIDDLE at specific X positions.
+ * 3 blades are drawn at each position (tilted-left, tilted-right, straight).
+ */
+void drawGrassBlades() {
+    glColor3f(0.20f, 0.55f, 0.15f); // Dark green
+    glLineWidth(1.5f);
+
+    // X positions for drawing grass (grass in 18 places)
+    float grassX[] = {-0.95f,-0.85f,-0.75f,-0.55f,-0.45f,-0.35f,-0.25f,
+                       0.25f, 0.35f, 0.45f, 0.55f, 0.75f, 0.85f, 0.95f,
+                      -0.15f, 0.15f, -0.65f, 0.65f};
+    int n = 18;
+    for (int i = 0; i < n; i++) {
+        float x = grassX[i];
+        float baseY = LINE_MIDDLE; // Base of grass at ground boundary
+        glBegin(GL_LINES);
+        // Left-tilted blade
+        glVertex2f(x, baseY);          glVertex2f(x - 0.01f, baseY + 0.04f);
+        // Right-tilted blade (slightly longer)
+        glVertex2f(x, baseY);          glVertex2f(x + 0.015f, baseY + 0.05f);
+        // Straight blade
+        glVertex2f(x + 0.01f, baseY);  glVertex2f(x + 0.005f, baseY + 0.035f);
+        glEnd();
+    }
+    glLineWidth(1.0f);
+}
+
+/*
+ * drawTree() - Draws a tree
+ * Parameters:
+ *   x     : Tree's X position
+ *   baseY : Tree's base Y position
+ *
+ * Tree = Brown trunk (quadrilateral) + Green leaves (3 overlapping circles)
+ */
+void drawTree(float x, float baseY) {
+    // Tree trunk (brown quadrilateral)
+    glColor3f(0.45f, 0.30f, 0.15f);
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.02f, baseY);          // Bottom-left
+    glVertex2f(x + 0.02f, baseY);          // Bottom-right
+    glVertex2f(x + 0.02f, baseY + 0.15f);  // Top-right
+    glVertex2f(x - 0.02f, baseY + 0.15f);  // Top-left
+    glEnd();
+
+    // Tree leaves (combination of green circles)
+    glColor3f(0.15f, 0.60f, 0.15f);
+    drawFilledCircle(x,         baseY + 0.22f, 0.07f); // Large center circle
+    drawFilledCircle(x - 0.05f, baseY + 0.18f, 0.06f); // Left circle
+    drawFilledCircle(x + 0.05f, baseY + 0.18f, 0.06f); // Right circle
+
+    // Dark border of leaves
+    glColor3f(0.10f, 0.40f, 0.10f);
+    drawCircleOutline(x,         baseY + 0.22f, 0.07f);
+    drawCircleOutline(x - 0.05f, baseY + 0.18f, 0.06f);
+    drawCircleOutline(x + 0.05f, baseY + 0.18f, 0.06f);
+}
+
+/*
+ * drawTrees() - Draws 4 trees (at ends and middle)
+ * Trees start from green ground using LINE_TOP - offset
+ */
+void drawTrees() {
+    drawTree(-0.88f, LINE_TOP - 0.03f); // Far left end
+    drawTree(-0.40f, LINE_TOP - 0.02f); // Left-middle
+    drawTree( 0.42f, LINE_TOP - 0.02f); // Right-middle
+    drawTree( 0.88f, LINE_TOP - 0.03f); // Far right end
+}
+
+/*
+ * drawPathway() - Draws a path/road
+ *
+ * Drawn in 3 steps:
+ *   1. Striped line (dashes to show path edges)
+ *   2. Random points (to show soil grains/stones)
+ *   3. Irregular lines (sand texture on path)
+ */
+void drawPathway() {
+    // ===== Path edge dash line =====
+    glColor3f(0.55f, 0.40f, 0.20f);
+    glLineWidth(3.0f);
+    glBegin(GL_LINES);
+    for (float px = -1.0f; px < 1.0f; px += 0.15f) {
+        // Top dash line
+        glVertex2f(px, LINE_MIDDLE - 0.12f);
+        glVertex2f(px + 0.08f, LINE_MIDDLE - 0.12f);
+        // Bottom dash line
+        glVertex2f(px, LINE_MIDDLE - 0.28f);
+        glVertex2f(px + 0.08f, LINE_MIDDLE - 0.28f);
+    }
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== Path soil grains (random points) =====
+    glColor3f(0.65f, 0.45f, 0.25f);
+    glPointSize(2.0f);
+    glBegin(GL_POINTS);
+    // Pseudo-random looking offsets are created using sin() and cos()
+    for(float px = -1.0f; px < 1.0f; px += 0.06f) {
+        for(float py = LINE_MIDDLE - 0.05f; py > LINE_BOTTOM + 0.05f; py -= 0.08f) {
+            // Pseudo-random positions using mathematical tricks
+            float offsetX = sin(py * 100.0f + px * 50.0f) * 0.02f;
+            float offsetY = cos(px * 80.0f + py * 60.0f) * 0.02f;
+            glVertex2f(px + offsetX, py + offsetY);
+        }
+    }
+    glEnd();
+
+    // ===== Sand texture on path (wavy lines) =====
+    glColor3f(0.60f, 0.42f, 0.22f);
+    glBegin(GL_LINES);
+    for (float px = -0.9f; px < 1.0f; px += 0.2f) {
+        // Wavy lines using sin()
+        float py = LINE_MIDDLE - 0.2f + sin(px * 10.0f) * 0.05f;
+        glVertex2f(px, py); glVertex2f(px + 0.05f, py);
+    }
+    glEnd();
+}
+
+
+// ============================================================
+//         NIGHT OVERLAY (Night dark effect)
+// ============================================================
+
+/*
+ * drawNightOverlay() - Adds a semi-transparent black layer over the ground at night
+ *
+ * Transparency is enabled by turning on GL_BLEND.
+ * The fourth value of glColor4f (alpha = 0.4) means 40% opaque = 60% transparent.
+ * This makes the ground visible but appears darkened.
+ */
+void drawNightOverlay() {
+    if (!isDayMode) { // Works only at night
+        glEnable(GL_BLEND); // Enable transparency
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Blending method
+
+        // Semi-transparent black-blue layer (across the entire ground)
+        glColor4f(0.0f, 0.0f, 0.1f, 0.4f); // (R,G,B, Alpha=40%)
+        glBegin(GL_QUADS);
+        glVertex2f(-1.0f, LINE_TOP); // Top-left
+        glVertex2f( 1.0f, LINE_TOP); // Top-right
+        glVertex2f( 1.0f, -1.0f);   // Bottom-right
+        glVertex2f(-1.0f, -1.0f);   // Bottom-left
+        glEnd();
+        glDisable(GL_BLEND); // Disable transparency
+    }
+}
+
+
+// ============================================================
+//        INTERACTIVE USER CHARACTER (Interactive User Character)
+// ============================================================
+
+/*
+ * drawUser() - Draws the main player character
+ * Parameters:
+ *   cx, cy : Character's center position
+ *
+ * Character parts (bottom to top):
+ *   1. Shoes (red quadrilateral)
+ *   2. Pants (dark blue two legs)
+ *   3. Shirt (yellow, orange button on chest)
+ *   4. Hands (skin-colored thick lines + palm circles)
+ *   5. Inventory item (balloon or fruit basket)
+ *   6. Neck
+ *   7. Head and hair
+ *   8. Eyes and smile
+ */
+void drawUser(float cx, float cy) {
+
+    // ===== Pants (two legs) =====
+    glColor3f(0.15f, 0.25f, 0.45f); // Dark blue jeans color
+    glBegin(GL_QUADS);
+    // Left leg
+    glVertex2f(cx - 0.05f, cy - 0.05f); glVertex2f(cx - 0.01f, cy - 0.05f);
+    glVertex2f(cx - 0.01f, cy - 0.28f); glVertex2f(cx - 0.05f, cy - 0.28f);
+    // Right leg
+    glVertex2f(cx + 0.01f, cy - 0.05f); glVertex2f(cx + 0.05f, cy - 0.05f);
+    glVertex2f(cx + 0.05f, cy - 0.28f); glVertex2f(cx + 0.01f, cy - 0.28f);
+    glEnd();
+
+    // ===== Shoes (red box under both legs) =====
+    glColor3f(0.8f, 0.2f, 0.1f); // Red color
+    glBegin(GL_QUADS);
+    // Left shoe
+    glVertex2f(cx - 0.06f, cy - 0.28f); glVertex2f(cx - 0.01f, cy - 0.28f);
+    glVertex2f(cx - 0.01f, cy - 0.33f); glVertex2f(cx - 0.06f, cy - 0.33f);
+    // Right shoe
+    glVertex2f(cx + 0.01f, cy - 0.28f); glVertex2f(cx + 0.06f, cy - 0.28f);
+    glVertex2f(cx + 0.06f, cy - 0.33f); glVertex2f(cx + 0.01f, cy - 0.33f);
+    glEnd();
+
+    // ===== Main part of shirt (yellow quadrilateral) =====
+    glColor3f(0.95f, 0.75f, 0.15f); // Bright yellow
+    glBegin(GL_QUADS);
+    glVertex2f(cx - 0.07f, cy + 0.14f); // Top-left shoulder
+    glVertex2f(cx + 0.07f, cy + 0.14f); // Top-right shoulder
+    glVertex2f(cx + 0.08f, cy - 0.12f); // Bottom-right
+    glVertex2f(cx - 0.08f, cy - 0.12f); // Bottom-left
+    glEnd();
+
+    // ===== Shirt button (orange design) =====
+    glColor3f(0.85f, 0.45f, 0.10f); // Orange color
+    glBegin(GL_QUADS);
+    glVertex2f(cx - 0.02f, cy + 0.14f); glVertex2f(cx + 0.02f, cy + 0.14f);
+    glVertex2f(cx + 0.02f, cy + 0.05f); glVertex2f(cx - 0.02f, cy + 0.05f);
+    glEnd();
+
+    // ===== Hands (drawn with thick lines) =====
+    glColor3f(0.95f, 0.75f, 0.60f); // Skin color
+    glLineWidth(6.0f); // Shows hands using thick lines
+    glBegin(GL_LINES);
+    // Left hand (hanging down)
+    glVertex2f(cx - 0.07f, cy + 0.12f); glVertex2f(cx - 0.12f, cy - 0.02f);
+    // Right hand (raised up - interactive pose)
+    glVertex2f(cx + 0.07f, cy + 0.12f); glVertex2f(cx + 0.14f, cy + 0.18f);
+    glEnd();
+    // Hand palm (small filled circle)
+    drawFilledCircle(cx - 0.12f, cy - 0.02f, 0.025f); // Left palm
+    drawFilledCircle(cx + 0.14f, cy + 0.18f, 0.025f); // Right palm
+    glLineWidth(1.0f);
+
+    // ============================================================
+    //       INVENTORY ITEMS (Showing bought items)
+    // ============================================================
+
+    /*
+     * If hasRightItem = true, a balloon is shown in the right hand
+     * Balloon: A string (LINE_STRIP) + elliptical circle + small triangle (bottom knot)
+     */
+  if (hasRightItem) {
+        // Balloon string (wavy line)
+        glColor3f(0.9f, 0.9f, 0.9f); // Light gray string
+        glLineWidth(1.5f);
+        glBegin(GL_LINE_STRIP);
+        glVertex2f(cx + 0.15f, cy + 0.34f);  // Starts from balloon's bottom knot
+        glVertex2f(cx + 0.13f, cy + 0.28f);  // Curved string (to the left)
+        glVertex2f(cx + 0.16f, cy + 0.23f);  // Curved string (to the right)
+        glVertex2f(cx + 0.14f, cy + 0.18f);  // Up to the palm of the hand
+        glEnd();
+
+        // Main part of balloon (ellipse - vertically elongated)
+        glPushMatrix();
+        glTranslatef(cx + 0.15f, cy + 0.38f, 0.0f);
+        glScalef(1.0f, 1.25f, 1.0f); // Enlarge in Y direction to create ellipse
+        glColor3f(0.1f * 0.7f, 0.7f * 0.7f, 1.0f * 0.7f); // Dark blue shade
+        drawFilledCircle(0.0f, 0.0f, 0.035f);              // Outer circle
+        glColor3f(0.1f, 0.7f, 1.0f);                       // Bright blue
+        drawFilledCircle(-0.005f, 0.005f, 0.025f);          // Inner highlight
+        glPopMatrix();
+
+        // Balloon's bottom knot (small triangle)
+        glColor3f(0.1f * 0.7f, 0.7f * 0.7f, 1.0f * 0.7f);
+        glBegin(GL_TRIANGLES);
+        glVertex2f(cx + 0.15f, cy + 0.34f);   // Top point
+        glVertex2f(cx + 0.14f, cy + 0.325f);  // Bottom-left
+        glVertex2f(cx + 0.16f, cy + 0.325f);  // Bottom-right
+        glEnd();
+
+        // Balloon's light reflection (small white circle)
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glPushMatrix();
+        glTranslatef(cx + 0.15f, cy + 0.38f, 0.0f);
+        glScalef(1.0f, 2.0f, 1.0f);
+        drawFilledCircle(-0.015f, 0.008f, 0.005f); // Small white dot
+        glPopMatrix();
+    }
+
+    /*
+     * If hasLeftItem = true, a fruit basket is shown in the left hand
+     * Basket: Brown handle (LINE_STRIP) + brown box + an apple on top
+     */
+    if (hasLeftItem) {
+        // Basket handle (U-shaped line)
+        glColor3f(0.5f, 0.3f, 0.1f); // Brown
+        glLineWidth(2.0f);
+        glBegin(GL_LINE_STRIP);
+        glVertex2f(cx - 0.14f, cy - 0.02f); // Top-left
+        glVertex2f(cx - 0.14f, cy - 0.08f); // Bottom-left
+        glVertex2f(cx - 0.10f, cy - 0.08f); // Bottom-right
+        glVertex2f(cx - 0.10f, cy - 0.02f); // Top-right
+        glEnd();
+        glLineWidth(1.0f);
+
+        // Main part of basket (trapezium shape - wide at top, narrow at bottom)
+        glColor3f(0.85f, 0.65f, 0.35f); // Light brown
+        glBegin(GL_QUADS);
+        glVertex2f(cx - 0.16f, cy - 0.08f); // Top-left
+        glVertex2f(cx - 0.08f, cy - 0.08f); // Top-right
+        glVertex2f(cx - 0.09f, cy - 0.18f); // Bottom-right
+        glVertex2f(cx - 0.15f, cy - 0.18f); // Bottom-left
+        glEnd();
+
+        // Top rim of basket (dark brown strip)
+        glColor3f(0.65f, 0.45f, 0.20f);
+        glBegin(GL_QUADS);
+        glVertex2f(cx - 0.16f, cy - 0.08f); glVertex2f(cx - 0.08f, cy - 0.08f);
+        glVertex2f(cx - 0.085f, cy - 0.10f); glVertex2f(cx - 0.155f, cy - 0.10f);
+        glEnd();
+
+        // Apple on top of basket
+        glPushMatrix();
+        glTranslatef(cx - 0.12f, cy - 0.06f, 0.0f);
+        glColor3f(0.7f, 0.0f, 0.0f);           // Dark red apple
+        drawFilledCircle(0.0f, 0.0f, 0.025f);
+        glColor3f(1.0f, 0.2f, 0.2f);           // Bright red highlight
+        drawFilledCircle(-0.006f, 0.006f, 0.012f);
+        // Apple stem
+        glColor3f(0.3f, 0.15f, 0.0f); glLineWidth(2.0f);
+        glBegin(GL_LINES); glVertex2f(0.0f, 0.02f); glVertex2f(0.008f, 0.035f); glEnd();
+        // Apple leaf
+        glColor3f(0.1f, 0.6f, 0.1f);
+        glBegin(GL_TRIANGLES);
+        glVertex2f(0.008f, 0.025f); glVertex2f(0.025f, 0.035f); glVertex2f(0.018f, 0.012f);
+        glEnd();
+        glPopMatrix();
+    }
+
+    // ===== Neck =====
+    glColor3f(0.95f, 0.75f, 0.60f); // Skin color
+    glBegin(GL_QUADS);
+    glVertex2f(cx - 0.02f, cy + 0.14f); glVertex2f(cx + 0.02f, cy + 0.14f);
+    glVertex2f(cx + 0.02f, cy + 0.18f); glVertex2f(cx - 0.02f, cy + 0.18f);
+    glEnd();
+
+    // ===== Head (skin-colored circle) =====
+    drawFilledCircle(cx, cy + 0.24f, 0.08f);
+
+    // ===== Hair (black semicircle + small circles on sides) =====
+    glColor3f(0.15f, 0.10f, 0.05f); // Black-brown
+    glBegin(GL_POLYGON);
+    // Coloring the top half of the head black
+    for (int i = 0; i <= 180; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(cx + cos(angle) * 0.082f, cy + 0.26f + sin(angle) * 0.06f);
+    }
+    glEnd();
+    // Messy hair part (large circle on side)
+    drawFilledCircle(cx - 0.04f, cy + 0.28f, 0.025f);
+    drawFilledCircle(cx + 0.02f, cy + 0.29f, 0.030f);
+    drawFilledCircle(cx + 0.05f, cy + 0.27f, 0.020f);
+
+    // ===== Eyes (white + black pupil + white shiny dot) =====
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawFilledCircle(cx - 0.03f, cy + 0.24f, 0.022f); // White part of left eye
+    drawFilledCircle(cx + 0.03f, cy + 0.24f, 0.022f); // White part of right eye
+    glColor3f(0.0f, 0.0f, 0.0f);
+    drawFilledCircle(cx - 0.03f, cy + 0.24f, 0.015f); // Left pupil (black)
+    drawFilledCircle(cx + 0.03f, cy + 0.24f, 0.015f); // Right pupil (black)
+    glColor3f(1.0f, 1.0f, 1.0f);
+    // Shiny highlight dot of the eye
+    drawFilledCircle(cx - 0.035f, cy + 0.245f, 0.006f);
+    drawFilledCircle(cx + 0.025f, cy + 0.245f, 0.006f);
+
+    // ===== Smile (curved line) =====
+    glColor3f(0.60f, 0.20f, 0.20f); // Dark red lip color
+    glLineWidth(2.5f);
+    glBegin(GL_LINE_STRIP);
+    // Bottom part of circle from 210° to 330° - smile shape
+    for (int i = 210; i <= 330; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(cx + cos(angle) * 0.025f, cy + 0.21f + sin(angle) * 0.025f);
+    }
+    glEnd();
+    glLineWidth(1.0f);
+}
+
+
+// ============================================================
+//       GENERIC HUMAN FIGURE (Generic Human - Shopkeeper and passengers)
+// ============================================================
+
+/*
+ * drawHuman() - Draws a generic human character
+ * Parameters:
+ *   x, y    : Character's center position
+ *   r, g, b : Shirt color (RGB values)
+ *
+ * Smaller and simpler design than drawUser().
+ * Used for shopkeepers and ferris wheel passengers.
+ * Different characters are created using the shirt color parameter.
+ */
+void drawHuman(float x, float y, float r, float g, float b) {
+
+    // ===== Body (colored shirt - color taken from parameter) =====
+    glColor3f(r, g, b); // Dynamic shirt color
+    glBegin(GL_QUADS);
+    // Body is slightly trapezium shaped (wide shoulders)
+    glVertex2f(x - 0.035f, y + 0.08f); // Top-left (shoulder)
+    glVertex2f(x + 0.035f, y + 0.08f); // Top-right (shoulder)
+    glVertex2f(x + 0.04f,  y);          // Bottom-right (waist)
+    glVertex2f(x - 0.04f,  y);          // Bottom-left (waist)
+    glEnd();
+
+    // Black border of shirt (outline)
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x - 0.035f, y + 0.08f); glVertex2f(x + 0.035f, y + 0.08f);
+    glVertex2f(x + 0.04f,  y); glVertex2f(x - 0.04f,  y);
+    glEnd();
+
+    // ===== Head (skin-colored circle + black border) =====
+    glColor3f(0.90f, 0.72f, 0.50f); // Skin color
+    drawFilledCircle(x, y + 0.12f, 0.04f);
+    glColor3f(0.0f, 0.0f, 0.0f);
+    drawCircleOutline(x, y + 0.12f, 0.04f);
+
+    // ===== Hair (small version) =====
+    glColor3f(0.15f, 0.10f, 0.05f);
+    glBegin(GL_POLYGON);
+    for (int i = 0; i <= 180; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(x + cos(angle) * 0.041f, y + 0.13f + sin(angle) * 0.03f);
+    }
+    glEnd();
+    drawFilledCircle(x - 0.02f, y + 0.14f, 0.012f);
+    drawFilledCircle(x + 0.01f, y + 0.145f, 0.015f);
+    drawFilledCircle(x + 0.025f, y + 0.135f, 0.010f);
+
+    // ===== Eyes (two black dots) =====
+    glPointSize(2.5f);
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_POINTS);
+    glVertex2f(x - 0.015f, y + 0.125f); // Left eye
+    glVertex2f(x + 0.015f, y + 0.125f); // Right eye
+    glEnd();
+
+    // ===== Smile (small curved line) =====
+    glBegin(GL_LINE_STRIP);
+    for (int i = 210; i <= 330; i++) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(x + cos(angle) * 0.02f, (y + 0.115f) + sin(angle) * 0.02f);
+    }
+    glEnd();
+
+    // ===== Hands (two diagonal black lines) =====
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+    // Left hand (pointing down)
+    glVertex2f(x - 0.035f, y + 0.06f); glVertex2f(x - 0.07f, y + 0.03f);
+    // Right hand (pointing down)
+    glVertex2f(x + 0.035f, y + 0.06f); glVertex2f(x + 0.07f, y + 0.03f);
+    glEnd();
+    glLineWidth(1.0f);
+}
+
+
+// ============================================================
+//           LEFT STALL - Fruit Shop (Left side)
+// ============================================================
+
+/*
+ * drawLeftStall() - Draws the left side fruit shop
+ *
+ * Structure:
+ *   1. Shopkeeper (pink shirt)
+ *   2. Two vertical poles (brown quadrilateral)
+ *   3. Red canopy (trapezium + white stripes)
+ *   4. Counter (brown table)
+ *   5. Fruits on counter (apple, orange, guava, lemon)
+ *   6. Box/drawer at bottom
+ */
+void drawLeftStall() {
+    float x = LSTALL_X, y = LSTALL_Y; // Center position of left shop
+
+    // Drawing shopkeeper (wearing pink shirt)
+    drawHuman(x, y + 0.0f, 0.8f, 0.3f, 0.6f);
+
+    // ===== Two vertical wooden poles =====
+    glColor3f(0.55f, 0.35f, 0.15f); // Brown wood color
+    // Left pole
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.15f, y); glVertex2f(x - 0.13f, y);
+    glVertex2f(x - 0.13f, y + 0.25f); glVertex2f(x - 0.15f, y + 0.25f);
+    glEnd();
+    // Right pole
+    glBegin(GL_QUADS);
+    glVertex2f(x + 0.13f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.15f, y + 0.25f); glVertex2f(x + 0.13f, y + 0.25f);
+    glEnd();
+
+    // ===== Red canopy (trapezoidal roof) =====
+    glColor3f(0.85f, 0.15f, 0.15f); // Bright red
+    glBegin(GL_QUADS);
+    // Wide at bottom, narrow at top - canopy shape
+    glVertex2f(x - 0.22f, y + 0.25f); // Bottom-left (wide)
+    glVertex2f(x + 0.22f, y + 0.25f); // Bottom-right (wide)
+    glVertex2f(x + 0.15f, y + 0.40f); // Top-right (narrow)
+    glVertex2f(x - 0.15f, y + 0.40f); // Top-left (narrow)
+    glEnd();
+    // Black border of canopy
+    glColor3f(0.65f, 0.10f, 0.10f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x - 0.22f, y + 0.25f); glVertex2f(x + 0.22f, y + 0.25f);
+    glVertex2f(x + 0.15f, y + 0.40f); glVertex2f(x - 0.15f, y + 0.40f);
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== White stripes of canopy =====
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glLineWidth(1.5f);
+    for (float stripe = -0.12f; stripe <= 0.12f; stripe += 0.06f) {
+        glBegin(GL_LINES);
+        glVertex2f(x + stripe, y + 0.26f);           // Bottom of stripe
+        glVertex2f(x + stripe * 0.7f, y + 0.39f);    // Top of stripe (slightly tilted)
+        glEnd();
+    }
+    glLineWidth(1.0f);
+
+    // ===== Counter (sales table) =====
+    glColor3f(0.90f, 0.78f, 0.55f); // Light brown wood
+    glBegin(GL_QUADS);
+    // Top board
+    glVertex2f(x - 0.15f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.20f, y - 0.15f); glVertex2f(x - 0.20f, y - 0.15f);
+    glEnd();
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP); // Counter border
+    glVertex2f(x - 0.15f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.20f, y - 0.15f); glVertex2f(x - 0.20f, y - 0.15f);
+    glEnd();
+
+    // ===== Drawing fruits on counter =====
+    // ---- Apple ----
+    glPushMatrix(); // Save current matrix
+    glTranslatef(x - 0.08f, y - 0.12f, 0.0f); // Move to apple's position
+    glColor3f(0.7f, 0.0f, 0.0f); drawFilledCircle(0.0f, 0.0f, 0.03f); // Dark red
+    glColor3f(1.0f, 0.2f, 0.2f); drawFilledCircle(-0.008f, 0.008f, 0.015f); // Highlight
+    glColor3f(0.3f, 0.15f, 0.0f); glLineWidth(2.0f);
+    glBegin(GL_LINES); glVertex2f(0.0f, 0.025f); glVertex2f(0.01f, 0.045f); glEnd(); // Stem
+    glColor3f(0.1f, 0.6f, 0.1f);
+    glBegin(GL_TRIANGLES); // Leaf
+    glVertex2f(0.01f, 0.03f); glVertex2f(0.03f, 0.04f); glVertex2f(0.02f, 0.015f);
+    glEnd();
+    glPopMatrix(); // Restore matrix
+
+    // ---- Orange ----
+    glPushMatrix();
+    glTranslatef(x - 0.02f, y - 0.12f, 0.0f);
+    glColor3f(0.9f, 0.4f, 0.0f); drawFilledCircle(0.0f, 0.0f, 0.03f); // Orange color
+    glColor3f(1.0f, 0.6f, 0.1f); drawFilledCircle(-0.005f, 0.005f, 0.02f); // Highlight
+    glColor3f(0.1f, 0.4f, 0.1f); drawFilledCircle(0.0f, 0.025f, 0.005f); // Stem
+    // Orange marks (texture points)
+    glPointSize(1.5f); glColor3f(0.8f, 0.3f, 0.0f);
+    glBegin(GL_POINTS);
+    glVertex2f(0.01f, 0.01f); glVertex2f(-0.01f, -0.01f);
+    glVertex2f(0.015f, -0.01f); glVertex2f(-0.005f, 0.015f);
+    glEnd();
+    glPopMatrix();
+
+    // ---- Guava (green) ----
+    glPushMatrix();
+    glTranslatef(x + 0.04f, y - 0.12f, 0.0f);
+    glColor3f(0.2f, 0.7f, 0.1f); drawFilledCircle(0.0f, 0.0f, 0.03f); // Green
+    glColor3f(0.4f, 0.9f, 0.3f); drawFilledCircle(-0.008f, 0.008f, 0.015f); // Highlight
+    glColor3f(0.3f, 0.15f, 0.0f); glLineWidth(2.0f);
+    glBegin(GL_LINES); glVertex2f(0.0f, 0.025f); glVertex2f(-0.01f, 0.045f); glEnd(); // Stem
+    glColor3f(0.1f, 0.5f, 0.1f);
+    glBegin(GL_TRIANGLES); // Leaf
+    glVertex2f(-0.01f, 0.03f); glVertex2f(-0.03f, 0.04f); glVertex2f(-0.02f, 0.015f);
+    glEnd();
+    glPopMatrix();
+
+    // ---- Lemon (yellow ellipse) ----
+    glPushMatrix();
+    glTranslatef(x + 0.10f, y - 0.12f, 0.0f);
+    glPushMatrix();
+    glScalef(1.2f, 0.9f, 1.0f); // Larger in X, smaller in Y = elliptical lemon
+    glColor3f(0.9f, 0.8f, 0.0f); drawFilledCircle(0.0f, 0.0f, 0.025f);
+    glColor3f(1.0f, 1.0f, 0.4f); drawFilledCircle(-0.005f, 0.005f, 0.015f);
+    glPopMatrix();
+    // Small circles on both sides of lemon (lemon ends)
+    glColor3f(0.9f, 0.8f, 0.0f);
+    drawFilledCircle(-0.028f, 0.0f, 0.006f);
+    drawFilledCircle(0.028f, 0.0f, 0.006f);
+    glPopMatrix();
+    glLineWidth(1.0f);
+
+    // ===== Bottom storage box =====
+    glColor3f(0.75f, 0.60f, 0.40f);
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.20f, y - 0.15f); glVertex2f(x + 0.20f, y - 0.15f);
+    glVertex2f(x + 0.20f, y - 0.35f); glVertex2f(x - 0.20f, y - 0.35f);
+    glEnd();
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x - 0.20f, y - 0.15f); glVertex2f(x + 0.20f, y - 0.15f);
+    glVertex2f(x + 0.20f, y - 0.35f); glVertex2f(x - 0.20f, y - 0.35f);
+    glEnd();
+}
+
+
+// ============================================================
+//          RIGHT STALL - Balloon Shop (Right side)
+// ============================================================
+
+/*
+ * drawRightStall() - Draws the right side balloon shop
+ *
+ * Structure:
+ *   1. Shopkeeper (green shirt)
+ *   2. Counter box
+ *   3. Three colored balloons (above counter)
+ *   4. A wheel (side decoration)
+ *   5. Two poles + blue canopy
+ */
+void drawRightStall() {
+    float x = RSTALL_X, y = RSTALL_Y; // Center of right shop
+
+    // Drawing shopkeeper (wearing green shirt)
+    drawHuman(x, y + 0.0f, 0.2f, 0.8f, 0.4f);
+
+    // ===== Counter box =====
+    glColor3f(0.90f, 0.78f, 0.55f); // Brown wood
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.15f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.15f, y - 0.30f); glVertex2f(x - 0.15f, y - 0.30f);
+    glEnd();
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP); // Border
+    glVertex2f(x - 0.15f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.15f, y - 0.30f); glVertex2f(x - 0.15f, y - 0.30f);
+    glEnd();
+
+    // ===== Three colored balloons =====
+    // Balloon colors (pink, blue, yellow)
+    float balloonColors[3][3] = {
+        {1.0f, 0.2f, 0.5f},  // Pink
+        {0.1f, 0.7f, 1.0f},  // Sky blue
+        {1.0f, 0.9f, 0.1f}   // Bright yellow
+    };
+    // Balloon positions (left, middle, right)
+    float balloonPos[3][2] = {
+        {x - 0.10f, y + 0.10f}, // Left balloon (slightly higher)
+        {x + 0.00f, y + 0.03f}, // Middle balloon (slightly lower)
+        {x + 0.10f, y + 0.10f}  // Right balloon (slightly higher)
+    };
+
+    for(int i = 0; i < 3; i++) {
+        glPushMatrix();
+        glTranslatef(balloonPos[i][0], balloonPos[i][1], 0.0f);
+
+        // Balloon string (wavy line)
+        glColor3f(0.9f, 0.9f, 0.9f); // Light gray string
+        glLineWidth(1.5f);
+        glBegin(GL_LINE_STRIP);
+        glVertex2f(0.0f, -0.04f);   // Balloon's bottom knot
+        glVertex2f(-0.01f, -0.08f); // Curved string
+        glVertex2f(0.01f, -0.12f);
+        glVertex2f(0.0f, y - balloonPos[i][1] - 0.15f); // Up to counter
+        glEnd();
+
+        // Main part of balloon (elliptical)
+        glPushMatrix();
+        glScalef(1.0f, 1.25f, 1.0f); // Elongated shape
+        // Dark shade (outer layer)
+        glColor3f(balloonColors[i][0]*0.7f, balloonColors[i][1]*0.7f, balloonColors[i][2]*0.7f);
+        drawFilledCircle(0.0f, 0.0f, 0.035f);
+        // Bright color (inner highlight)
+        glColor3f(balloonColors[i][0], balloonColors[i][1], balloonColors[i][2]);
+        drawFilledCircle(-0.005f, 0.005f, 0.025f);
+        glPopMatrix();
+
+        // Balloon's bottom knot (small triangle)
+        glColor3f(balloonColors[i][0]*0.7f, balloonColors[i][1]*0.7f, balloonColors[i][2]*0.7f);
+        glBegin(GL_TRIANGLES);
+        glVertex2f(0.0f, -0.04f);   // Top point
+        glVertex2f(-0.01f, -0.055f); // Bottom-left
+        glVertex2f(0.01f, -0.055f);  // Bottom-right
+        glEnd();
+
+        // Balloon's light reflection
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glPushMatrix();
+        glScalef(1.0f, 2.0f, 1.0f);
+        drawFilledCircle(-0.015f, 0.008f, 0.005f);
+        glPopMatrix();
+
+        glPopMatrix(); // Restore balloon matrix
+    }
+    glLineWidth(1.0f);
+
+    // ===== Side pole (a vertical line) =====
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINES);
+    glVertex2f(x + 0.12f, y - 0.30f); glVertex2f(x + 0.12f, y - 0.45f);
+    glEnd();
+
+    // ===== Decorative wheel =====
+    float wx = x - 0.08f, wy = y - 0.35f, wr = 0.10f;
+    glColor3f(0.0f, 0.0f, 0.0f);
+    drawCircleOutline(wx, wy, wr); // Outer ring of wheel
+    glBegin(GL_LINES);
+    // 8 spokes at 45° intervals
+    for (int i = 0; i < 360; i += 45) {
+        float angle = i * PI / 180.0f;
+        glVertex2f(wx, wy);                              // From center
+        glVertex2f(wx + cos(angle) * wr, wy + sin(angle) * wr); // Up to rim
+    }
+    glEnd();
+
+    // ===== Two poles =====
+    glColor3f(0.55f, 0.35f, 0.15f); // Brown wood
+    glBegin(GL_QUADS);
+    // Left pole
+    glVertex2f(x - 0.15f, y); glVertex2f(x - 0.13f, y);
+    glVertex2f(x - 0.13f, y + 0.25f); glVertex2f(x - 0.15f, y + 0.25f);
+    glEnd();
+    glBegin(GL_QUADS);
+    // Right pole
+    glVertex2f(x + 0.13f, y); glVertex2f(x + 0.15f, y);
+    glVertex2f(x + 0.15f, y + 0.25f); glVertex2f(x + 0.13f, y + 0.25f);
+    glEnd();
+
+    // ===== Blue canopy (rectangular - different design from fruit shop) =====
+    glColor3f(0.15f, 0.55f, 0.85f); // Sky blue
+    glBegin(GL_QUADS);
+    glVertex2f(x - 0.20f, y + 0.25f); glVertex2f(x + 0.20f, y + 0.25f);
+    glVertex2f(x + 0.20f, y + 0.38f); glVertex2f(x - 0.20f, y + 0.38f);
+    glEnd();
+    glColor3f(0.10f, 0.40f, 0.65f); // Dark blue border
+    glLineWidth(2.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x - 0.20f, y + 0.25f); glVertex2f(x + 0.20f, y + 0.25f);
+    glVertex2f(x + 0.20f, y + 0.38f); glVertex2f(x - 0.20f, y + 0.38f);
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== White vertical stripes of canopy =====
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glLineWidth(1.5f);
+    for (float stripe = -0.16f; stripe <= 0.16f; stripe += 0.06f) {
+        glBegin(GL_LINES);
+        glVertex2f(x + stripe, y + 0.26f); // Bottom of stripe
+        glVertex2f(x + stripe, y + 0.37f); // Top of stripe (straight vertical)
+        glEnd();
+    }
+    glLineWidth(1.0f);
+}
+
+
+// ============================================================
+//          FERRIS WHEEL SUB-FUNCTIONS (Ferris wheel parts)
+// ============================================================
+
+/*
+ * drawWheelLights() - Draws colored lights on the wheel's rim
+ *
+ * 16 lights are equally spaced on the wheel's rim.
+ * wheelAngle is added so it rotates with the wheel.
+ * 4 colors alternately (red, yellow, green, blue).
+ *
+ * radius = 0.38f -> Slightly smaller than wheel radius (stays on rim)
+ */
+void drawWheelLights() {
+    float radius = 0.38f;
+    int numLights = 16; // Total number of lights
+    for (int i = 0; i < numLights; i++) {
+        // Angle of each light = (i * 360/16 + wheelAngle) degrees
+        float angle = (i * 360.0f / numLights + wheelAngle) * PI / 180.0f;
+        float lx = cos(angle) * radius;
+        float ly = sin(angle) * radius;
+
+        // Color changes every 4 lights
+        switch (i % 4) {
+            case 0: glColor3f(1.0f, 0.2f, 0.2f); break; // Red
+            case 1: glColor3f(1.0f, 1.0f, 0.2f); break; // Yellow
+            case 2: glColor3f(0.2f, 1.0f, 0.2f); break; // Green
+            case 3: glColor3f(0.2f, 0.5f, 1.0f); break; // Blue
+        }
+        drawFilledCircle(lx, ly, 0.015f); // Small filled circle = light
+    }
+}
+
+/*
+ * drawWheelRim() - Draws the outer ring of the wheel
+ * Thick circular line of dark red color
+ */
+void drawWheelRim() {
+    glColor3f(0.6f, 0.2f, 0.2f); // Dark red
+    glLineWidth(3.0f);            // Thick line
+    drawCircleOutline(0.0f, 0.0f, 0.37f); // Outer ring of wheel
+    glLineWidth(1.0f);
+}
+
+/*
+ * drawGondolaBox() - Draws a gondola (seat box) of the ferris wheel
+ * Parameters:
+ *   colorIndex : Which color gondola (0-3)
+ *
+ * Gondola parts:
+ *   1. Black border box
+ *   2. Colored bottom part (seat)
+ *   3. Arch on top - hanging hook
+ *   4. A passenger inside (drawn with drawHuman())
+ *
+ * 4 differently colored gondolas (red, green, blue, yellow)
+ * 4 passengers with different shirt colors (white, yellow, orange, sky blue)
+ */
+void drawGondolaBox(int colorIndex) {
+    // Gondola box colors
+    float boxColors[4][3] = {
+        {0.90f, 0.25f, 0.25f}, // Red
+        {0.25f, 0.70f, 0.25f}, // Green
+        {0.25f, 0.45f, 0.90f}, // Blue
+        {0.90f, 0.70f, 0.15f}  // Yellow
+    };
+    // Passenger shirt colors
+    float dressColors[4][3] = {
+        {1.0f, 1.0f, 1.0f},   // White
+        {1.0f, 1.0f, 0.0f},   // Yellow
+        {1.0f, 0.6f, 0.2f},   // Orange
+        {0.2f, 0.8f, 0.9f}    // Sky blue
+    };
+
+    int ci = colorIndex % 4; // Keeps it bounded between 0,1,2,3
+
+    // Outer black border of gondola
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(-0.08f,  0.13f); // Top-left
+    glVertex2f( 0.08f,  0.13f); // Top-right
+    glVertex2f( 0.08f, -0.14f); // Bottom-right
+    glVertex2f(-0.08f, -0.14f); // Bottom-left
+    glEnd();
+
+    // Colored seat part at the bottom of gondola
+    glColor3f(boxColors[ci][0], boxColors[ci][1], boxColors[ci][2]);
+    glBegin(GL_QUADS);
+    glVertex2f(-0.08f, -0.07f); glVertex2f( 0.08f, -0.07f);
+    glVertex2f( 0.08f, -0.14f); glVertex2f(-0.08f, -0.14f);
+    glEnd();
+    // Black border of seat
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(-0.08f, -0.07f); glVertex2f( 0.08f, -0.07f);
+    glVertex2f( 0.08f, -0.14f); glVertex2f(-0.08f, -0.14f);
+    glEnd();
+
+    // Arch on top of gondola (hanging hook)
+    glColor3f(0.0f, 0.0f, 0.0f);
+    drawArch(0.0f, 0.13f, 0.08f, 0.06f);
+
+    // Drawing passenger inside gondola
+    drawHuman(0.0f, -0.07f, dressColors[ci][0], dressColors[ci][1], dressColors[ci][2]);
+}
+
+/*
+ * drawFerrisWheel() - Draws the complete ferris wheel
+ *
+ * This function is called in a rotating state using glPushMatrix/glPopMatrix.
+ * Meaning the whole wheel is rotating with wheelAngle.
+ *
+ * Parts:
+ *   1. Outer ring (drawWheelRim)
+ *   2. Two cross bars (horizontal and vertical)
+ *   3. Colored lights (drawWheelLights)
+ *   4. Golden bulb at center
+ *   5. 4 gondolas (on 4 sides of wheel)
+ *
+ * Gondola specialty: Rotates with wheel but stays upright itself
+ * (counter-rotation with glRotatef(-wheelAngle))
+ */
+void drawFerrisWheel() {
+    drawWheelRim(); // Outer red ring
+
+    // ===== Horizontal cross bar =====
+    glColor3f(0.65f, 0.65f, 0.70f); // Gray metal
+    glBegin(GL_QUADS);
+    glVertex2f( 0.36f,  0.015f); glVertex2f( 0.36f, -0.015f);
+    glVertex2f(-0.36f, -0.015f); glVertex2f(-0.36f,  0.015f);
+    glEnd();
+    glColor3f(0.3f, 0.3f, 0.35f);
+    glBegin(GL_LINE_LOOP); // Border
+    glVertex2f( 0.36f,  0.015f); glVertex2f( 0.36f, -0.015f);
+    glVertex2f(-0.36f, -0.015f); glVertex2f(-0.36f,  0.015f);
+    glEnd();
+
+    // ===== Vertical cross bar =====
+    glColor3f(0.65f, 0.65f, 0.70f);
+    glBegin(GL_QUADS);
+    glVertex2f( 0.015f,  0.36f); glVertex2f(-0.015f,  0.36f);
+    glVertex2f(-0.015f, -0.36f); glVertex2f( 0.015f, -0.36f);
+    glEnd();
+    glColor3f(0.3f, 0.3f, 0.35f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f( 0.015f,  0.36f); glVertex2f(-0.015f,  0.36f);
+    glVertex2f(-0.015f, -0.36f); glVertex2f( 0.015f, -0.36f);
+    glEnd();
+
+    drawWheelLights(); // Colored lights
+
+    // ===== Golden bulb at center =====
+    glColor3f(0.85f, 0.75f, 0.20f); // Golden
+    drawFilledCircle(0.0f, 0.0f, 0.045f); // Large golden circle
+    glColor3f(0.6f, 0.5f, 0.1f);
+    drawCircleOutline(0.0f, 0.0f, 0.045f); // Border
+    glColor3f(0.95f, 0.85f, 0.3f);
+    drawFilledCircle(0.0f, 0.0f, 0.02f); // Small bright center
+
+    // ===== 4 gondolas (on 4 sides of wheel) =====
+    // Gondola positions: Right, Left, Top, Bottom
+    float gondolaPos[4][2] = {
+        { 0.36f,  0.00f}, // Right
+        {-0.36f,  0.00f}, // Left
+        { 0.00f,  0.36f}, // Top
+        { 0.00f, -0.36f}  // Bottom
+    };
+
+    for (int i = 0; i < 4; i++) {
+        glPushMatrix();
+        glTranslatef(gondolaPos[i][0], gondolaPos[i][1], 0.0f); // Go to gondola position
+
+        /*
+         * counter-rotation: The wheel is rotating with wheelAngle,
+         * The gondola is rotated inversely with -wheelAngle,
+         * So the gondola always stays straight (upright) - just like a real ferris wheel!
+         */
+        glRotatef(-wheelAngle, 0, 0, 1);
+
+        // Hanging wire (connection from wheel to gondola)
+        glColor3f(0.3f, 0.3f, 0.3f);
+        glLineWidth(2.0f);
+        glBegin(GL_LINES);
+        glVertex2f(0.0f,  0.00f); // Connection point with wheel
+        glVertex2f(0.0f, -0.06f); // Top of gondola
+        glEnd();
+        glLineWidth(1.0f);
+
+        glTranslatef(0.0f, -0.25f, 0.0f); // Move gondola down a bit
+        drawGondolaBox(i); // Draw gondola
+        glPopMatrix();
+    }
+}
+
+/*
+ * drawFerrisStand() - Draws the ferris wheel pole/stand
+ *
+ * Structure:
+ *   1. Two diagonal legs (inverted V shape)
+ *   2. A horizontal connecting bar in the middle
+ *   3. A wide base plate at the bottom
+ */
+void drawFerrisStand() {
+    float standTop    = WCY;        // Starts at the height of wheel center
+    float standBottom = LINE_MIDDLE; // Ends at ground
+
+    // ===== Two diagonal legs =====
+    glColor3f(0.4f, 0.4f, 0.45f); // Gray metal
+    glBegin(GL_QUADS);
+    // Left leg (narrow at top, goes left getting wider at bottom)
+    glVertex2f(WCX - 0.02f, standTop); glVertex2f(WCX + 0.01f, standTop);
+    glVertex2f(WCX - 0.12f, standBottom); glVertex2f(WCX - 0.15f, standBottom);
+    // Right leg
+    glVertex2f(WCX - 0.01f, standTop); glVertex2f(WCX + 0.02f, standTop);
+    glVertex2f(WCX + 0.15f, standBottom); glVertex2f(WCX + 0.12f, standBottom);
+    glEnd();
+
+    // Leg borders
+    glColor3f(0.2f, 0.2f, 0.25f);
+    glLineWidth(1.5f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(WCX - 0.02f, standTop); glVertex2f(WCX + 0.01f, standTop);
+    glVertex2f(WCX - 0.12f, standBottom); glVertex2f(WCX - 0.15f, standBottom);
+    glEnd();
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(WCX - 0.01f, standTop); glVertex2f(WCX + 0.02f, standTop);
+    glVertex2f(WCX + 0.15f, standBottom); glVertex2f(WCX + 0.12f, standBottom);
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== Middle horizontal connecting bar =====
+    float midY = (standTop + standBottom) / 2.0f; // Mid-height between the two legs
+    glColor3f(0.35f, 0.35f, 0.40f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+    glVertex2f(WCX - 0.08f, midY); // Left side
+    glVertex2f(WCX + 0.08f, midY); // Right side
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== Bottom base plate =====
+    glColor3f(0.3f, 0.3f, 0.35f);
+    glBegin(GL_QUADS);
+    glVertex2f(WCX - 0.18f, standBottom);          // Top-left
+    glVertex2f(WCX + 0.18f, standBottom);          // Top-right
+    glVertex2f(WCX + 0.18f, standBottom - 0.03f);  // Bottom-right
+    glVertex2f(WCX - 0.18f, standBottom - 0.03f);  // Bottom-left
+    glEnd();
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(WCX - 0.18f, standBottom); glVertex2f(WCX + 0.18f, standBottom);
+    glVertex2f(WCX + 0.18f, standBottom - 0.03f); glVertex2f(WCX - 0.18f, standBottom - 0.03f);
+    glEnd();
+}
+
+
+// ============================================================
+//          NOTIFICATION BOX (Buy notification box)
+// ============================================================
+
+/*
+ * drawNotification() - Shows buy notification when near a shop
+ *
+ * Shows "Buy Item? (Y/N)" text in a semi-transparent black box.
+ * Transparency is created using GL_BLEND.
+ * Each character is drawn using glutBitmapCharacter().
+ */
+void drawNotification() {
+    // Enable transparency
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // ===== Semi-transparent black background =====
+    glColor4f(0.1f, 0.1f, 0.1f, 0.85f); // 85% opaque black
+    glBegin(GL_QUADS);
+    glVertex2f(-0.25f, 0.85f); glVertex2f( 0.25f, 0.85f);
+    glVertex2f( 0.25f, 0.72f); glVertex2f(-0.25f, 0.72f);
+    glEnd();
+
+    // ===== White border =====
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(-0.25f, 0.85f); glVertex2f( 0.25f, 0.85f);
+    glVertex2f( 0.25f, 0.72f); glVertex2f(-0.25f, 0.72f);
+    glEnd();
+    glLineWidth(1.0f);
+
+    // ===== Yellow text =====
+    glColor3f(1.0f, 1.0f, 0.0f); // Bright yellow
+    glRasterPos2f(-0.18f, 0.77f); // Starting position of text
+    const char* msg = "Buy Item? (Y/N)";
+    // Drawing each character separately
+    for (const char* c = msg; *c != '\0'; c++) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+    }
+    glDisable(GL_BLEND); // Disable transparency
+}
+
+
+// ============================================================
+//              MAIN DISPLAY FUNCTION (Main display function)
+// ============================================================
+
+/*
+ * display() - Draws everything on each frame
+ *
+ * This is OpenGL's callback function - GLUT calls it automatically.
+ * Drawing order (Z-order) is important - things drawn later appear on top.
+ *
+ * Drawing order (back to front):
+ *   1. Sky (furthest back)
+ *   2. Sun/moon, stars
+ *   3. Clouds
+ *   4. Trees
+ *   5. Ground, path, grass
+ *   6. Night dark layer
+ *   7. Shops (left and right)
+ *   8. Ferris wheel (stand + rotating wheel)
+ *   9. User character (furthest front)
+ *   10. Notification box (if needed)
+ *
+ * Interaction Logic:
+ *   - nearLeft/nearRight: Checks if character is near a shop
+ *   - askedLeft/askedRight: To prevent asking more than once
+ */
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT); // Clear the screen
+
+    // ===== Check if near a shop =====
+    // Near left shop: X -0.95 to -0.45 and Y above -0.30
+    bool nearLeft  = (userX > -0.95f && userX < -0.45f && userY > -0.30f);
+    // Near right shop: X 0.45 to 0.95 and Y above -0.30
+    bool nearRight = (userX > 0.45f && userX < 0.95f && userY > -0.30f);
+
+    // Show notification if near shop and not asked before
+    if (!askedLeft && nearLeft) {
+        showNotification = true;
+        currentShop = 1; // Left shop
+    } else if (!askedRight && nearRight) {
+        showNotification = true;
+        currentShop = 2; // Right shop
+    }
+
+    // Hide notification if moved away from shop
+    if (!nearLeft && currentShop == 1)  showNotification = false;
+    if (!nearRight && currentShop == 2) showNotification = false;
+
+    // ===== Scene drawing order =====
+    drawSky();          // 1. Sky (background)
+    drawSunOrMoon();    // 2. Sun or moon
+    drawStars();        // 3. Stars (night only)
+    drawClouds();       // 4. Clouds (animated)
+    drawTrees();        // 5. Trees
+    drawGround();       // 6. Ground layers
+    drawPathway();      // 7. Path
+    drawGrassBlades();  // 8. Grass blades
+    drawNightOverlay(); // 9. Night dark layer (at night)
+
+    drawLeftStall();    // 10. Left fruit shop
+    drawRightStall();   // 11. Right balloon shop
+
+    drawFerrisStand();  // 12. Ferris wheel stand
+
+    // Drawing ferris wheel in rotating state
+    glPushMatrix();                          // Save current matrix
+    glTranslatef(WCX, WCY, 0.0f);           // Translate to wheel center
+    glRotatef(wheelAngle, 0, 0, 1);         // Rotate by wheelAngle on Z-axis
+    drawFerrisWheel();                       // Draw wheel
+    glPopMatrix();                           // Restore matrix
+
+    drawUser(userX, userY); // 13. User character (furthest front)
+
+    // Show notification (on top of everything)
+    if (showNotification) drawNotification();
+
+    glutSwapBuffers(); // Double buffering - smooth animation without flickering
+}
+
+
+// ============================================================
+//           INPUT & ANIMATION CALLBACKS
+//           INPUT & ANIMATION CALLBACKS
+// ============================================================
+
+/*
+ * keyboard() - Handles standard keyboard input
+ * Parameters:
+ *   key  : ASCII code of pressed character
+ *   x, y : Mouse position (not used here)
+ *
+ * D/d -> Day mode
+ * N/n -> Night mode (if no notification)
+ * Y/y -> Buy from shop
+ * R/r -> Do not buy from shop
+ *
+ * So it determines what to do by checking showNotification
+ */
+void keyboard(unsigned char key, int x, int y) {
+    if (key == 'D' || key == 'd') {
+        isDayMode = true;  // Enable day mode
+    } else if (key == 'N' || key == 'n') {
+        isDayMode = false; // Enable night mode
+    } else if (showNotification) {
+        // If Y or N is pressed while notification is showing
+        if (key == 'y' || key == 'Y') {
+            // Yes - Buy item
+            if (currentShop == 1) {
+                hasLeftItem = true;   // Bought fruit
+                askedLeft = true;     // Will not ask again
+            } else if (currentShop == 2) {
+                hasRightItem = true;  // Bought balloon
+                askedRight = true;    // Will not ask again
+            }
+            showNotification = false; // Close notification
+        } else if (key == 'r' || key == 'R') {
+            // No - Will not buy item
+            if (currentShop == 1) askedLeft = true;   // Will not ask again
+            else if (currentShop == 2) askedRight = true;
+            showNotification = false; // Close notification
+        }
+    }
+    glutPostRedisplay(); // Request to redraw screen
+}
+
+/*
+ * specialKeys() - Handles special keys (Arrow Keys)
+ *
+ * Character is moved using Arrow Keys.
+ * Character's movement boundaries are defined:
+ *   X boundary: -0.90 to 0.90 (within screen)
+ *   Y boundary: -0.47 to -0.07 (at ground layer)
+ */
+void specialKeys(int key, int x, int y) {
+    if (key == GLUT_KEY_LEFT)  userX -= USER_SPEED; // Go left
+    if (key == GLUT_KEY_RIGHT) userX += USER_SPEED; // Go right
+    if (key == GLUT_KEY_UP)    userY += USER_SPEED; // Go up
+    if (key == GLUT_KEY_DOWN)  userY -= USER_SPEED; // Go down
+
+    // X-axis boundary (will not go off-screen)
+    if (userX < -0.90f) userX = -0.90f;
+    if (userX >  0.90f) userX =  0.90f;
+
+    // Y-axis boundary (will stay at ground layer)
+    if (userY < -0.47f) userY = -0.47f; // Bottom boundary
+    if (userY > -0.07f) userY = -0.07f; // Top boundary
+
+    glutPostRedisplay(); // Request to redraw screen
+}
+
+/*
+ * timer() - Updates animation at specific intervals
+ *
+ * TIMER_MS (20ms) = 50 frames per second (50 FPS)
+ *
+ * On each call:
+ *   1. Decrease wheelAngle -> Wheel rotates counter-clockwise
+ *   2. Increase cloudOffset -> Clouds move right
+ *   3. glutPostRedisplay() -> Request to draw next frame
+ *   4. glutTimerFunc() -> Schedule next call (repetition)
+ */
+void timer(int) {
+    wheelAngle -= WHEEL_SPEED; // Wheel rotates counter-clockwise (negative = anti-clockwise)
+    if (wheelAngle < -360.0f) wheelAngle += 360.0f; // Reset if less than -360
+
+    cloudOffset += CLOUD_SPEED; // Clouds slowly move right
+
+    glutPostRedisplay();              // Request to redraw screen
+    glutTimerFunc(TIMER_MS, timer, 0); // Call again after TIMER_MS
+}
+
+
+// ============================================================
+//                    MAIN FUNCTION (Main function)
+// ============================================================
+
+/*
+ * main() - Start of the program
+ *
+ * Steps:
+ *   1. glutInit()           -> Initialize GLUT
+ *   2. glutInitDisplayMode() -> Double buffer (smooth animation) + RGB color mode
+ *   3. glutInitWindowSize()  -> 1000x700 pixel window
+ *   4. glutCreateWindow()    -> Create window
+ *   5. glEnable(GL_BLEND)   -> Enable transparency
+ *   6. Register callback functions
+ *   7. glutMainLoop()        -> Start GLUT event loop (infinite loop)
+ *
+ * Why Double Buffering?
+ *   With a single buffer, screen flickering is visible during drawing.
+ *   Double buffer = Draw in one buffer, show the other, then swap.
+ *   The two buffers are swapped using glutSwapBuffers().
+ */
+int main(int argc, char** argv) {
+    glutInit(&argc, argv);                              // GLUT initial setup
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);        // Double buffer + RGB mode
+    glutInitWindowSize(900, 600);                      // Window size: 1000x700
+    glutCreateWindow("Interactive Village Fair - Graphics Project"); // Create window
+
+    // Enabling transparency
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Alpha blending method
+
+    // ===== Registering Callback Functions =====
+    glutDisplayFunc(display);      // Screen drawing function
+    glutKeyboardFunc(keyboard);    // Standard key press function
+    glutSpecialFunc(specialKeys);  // Special key (Arrow) press function
+    glutTimerFunc(0, timer, 0);    // Animation timer (first call after 0ms)
+
+    glutMainLoop(); // Start GLUT event loop (program stays here)
+    return 0;       // End of program (never reaches this line)
+}
