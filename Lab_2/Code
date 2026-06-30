@@ -1,0 +1,218 @@
+#include <windows.h>  // for MS Windows
+#include <GL/glut.h>  // GLUT, include glu.h and gl.h
+
+/* Handler for window-repaint event. Call back when the window first appears and
+whenever the window needs to be re-painted. */
+void display() {
+	glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // Set background color to black and opaque
+	glClear(GL_COLOR_BUFFER_BIT);         // It erases the previous frame and prepares the window for fresh drawing
+
+     //CREATE LINE
+    glBegin(GL_LINES);
+
+    //line 2: X axis (Horizontal)
+    glColor3f(0.0f, 0.0f, 0.0f); // Cyan Color
+    glVertex2f(-1.0f, 0.0f); //Left
+    glVertex2f(1.0f, 0.0f); //Right
+    glEnd();
+
+
+
+    //DRAW TRIANGLE
+    glBegin(GL_TRIANGLES);
+    glColor3f(0.7f, 0.7f, 0.7f); // white Color
+    glVertex2f(0.7f, 0.5f);    // Bottom Right
+    glVertex2f(-0.7f, 0.5f);     // Bottom Left
+    glVertex2f(0.0f, 0.9f);      // Top Center
+    glEnd();
+
+     //DRAW TRIANGLE Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // white Color
+    glVertex2f(0.7f, 0.5f);    // Bottom Right
+    glVertex2f(-0.7f, 0.5f);     // Bottom Left
+    glVertex2f(0.0f, 0.9f);      // Top Center
+    glEnd();
+
+
+
+   // House Body
+    glBegin(GL_QUADS);
+    glColor3f(0.0f, 1.0f, 1.0f); // cyan color
+
+    glVertex2f(0.5f, 0.0f);   // Vertex 1
+    glVertex2f(-0.5f, 0.0f);   // Vertex 2
+    glVertex2f(-0.5f, 0.5f);   // Vertex 3
+    glVertex2f(0.5f, 0.5f);   // Vertex 4
+    glEnd();
+
+    // House Body  Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // cyan color
+
+    glVertex2f(0.5f, 0.0f);   // Vertex 1
+    glVertex2f(-0.5f, 0.0f);   // Vertex 2
+    glVertex2f(-0.5f, 0.5f);   // Vertex 3
+    glVertex2f(0.5f, 0.5f);   // Vertex 4
+    glEnd();
+
+     //DOOR
+    glBegin(GL_QUADS);
+    glColor3f(1.0f, 1.0f, 0.0f); // Yellow
+    glVertex2f(-0.15f, 0.0f);  // Bottom Left
+    glVertex2f(0.15f, 0.0f);   // Bottom Right
+    glVertex2f(0.15f, 0.3f);   // Top Right
+    glVertex2f(-0.15f, 0.3f);  // Top Left
+    glEnd();
+
+     //DOOR Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // Yellow
+    glVertex2f(-0.15f, 0.0f);  // Bottom Left
+    glVertex2f(0.15f, 0.0f);   // Bottom Right
+    glVertex2f(0.15f, 0.3f);   // Top Right
+    glVertex2f(-0.15f, 0.3f);  // Top Left
+    glEnd();
+
+    glBegin(GL_LINES);
+    glColor3f(0.0f, 0.0f, 0.0f); // Cyan Color
+    glVertex2f(0.0f, 0.0f); //Bottom
+    glVertex2f(0.0f, 0.3f); //Top
+    glEnd();
+
+
+
+   //LEFT WINDOW
+    glBegin(GL_QUADS);
+    glColor3f(1.0f, 1.0f, 0.0f); // Yellow window
+    glVertex2f(-0.4f, 0.2f);   // Bottom Left
+    glVertex2f(-0.2f, 0.2f);   // Bottom Right
+    glVertex2f(-0.2f, 0.4f);   // Top Right
+    glVertex2f(-0.4f, 0.4f);   // Top Left
+    glEnd();
+
+    //LEFT WINDOW Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // Yellow window
+    glVertex2f(-0.4f, 0.2f);   // Bottom Left
+    glVertex2f(-0.2f, 0.2f);   // Bottom Right
+    glVertex2f(-0.2f, 0.4f);   // Top Right
+    glVertex2f(-0.4f, 0.4f);   // Top Left
+    glEnd();
+
+    // --- RIGHT WINDOW ---
+    glBegin(GL_QUADS);
+    glColor3f(1.0f, 1.0f, 0.0f); // Yellow window
+    glVertex2f(0.2f, 0.2f);    // Bottom Left
+    glVertex2f(0.4f, 0.2f);    // Bottom Right
+    glVertex2f(0.4f, 0.4f);    // Top Right
+    glVertex2f(0.2f, 0.4f);    // Top Left
+    glEnd();
+
+     //RIGHT WINDOW Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // Yellow window
+    glVertex2f(0.2f, 0.2f);    // Bottom Left
+    glVertex2f(0.4f, 0.2f);    // Bottom Right
+    glVertex2f(0.4f, 0.4f);    // Top Right
+    glVertex2f(0.2f, 0.4f);    // Top Left
+    glEnd();
+
+    //DRAW Wind Mill Poll Rectangle
+    glBegin(GL_QUADS);
+    glColor3f(0.7f, 0.7f, 0.7f); // Yellow window
+    glVertex2f(0.85f, 0.0f);    // Bottom Left
+    glVertex2f(0.8f, 0.0f);    // Bottom Right
+    glVertex2f(0.8f, 0.7f);    // Top Right
+    glVertex2f(0.85f, 0.7f);    // Top Left
+    glEnd();
+
+    //DRAW Wind Mill Poll Rectangle Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // Yellow window
+    glVertex2f(0.85f, 0.0f);    // Bottom Left
+    glVertex2f(0.8f, 0.0f);    // Bottom Right
+    glVertex2f(0.8f, 0.7f);    // Top Right
+    glVertex2f(0.85f, 0.7f);    // Top Left
+    glEnd();
+
+    //DRAW Wind Mill Top Rectangle
+    glBegin(GL_QUADS);
+    glColor3f(0.7f, 0.7f, 0.7f); // Yellow window
+    glVertex2f(0.9f, 0.7f);    // Bottom Left
+    glVertex2f(0.75f, 0.7f);    // Bottom Right
+    glVertex2f(0.75f, 0.8f);    // Top Right
+    glVertex2f(0.9f, 0.8f);    // Top Left
+    glEnd();
+
+    //DRAW Wind Mill Top Rectangle Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // Yellow window
+    glVertex2f(0.9f, 0.7f);    // Bottom Left
+    glVertex2f(0.75f, 0.7f);    // Bottom Right
+    glVertex2f(0.75f, 0.8f);    // Top Right
+    glVertex2f(0.9f, 0.8f);    // Top Left
+    glEnd();
+
+     //DRAW Wind Mill TRIANGLE_1
+    glBegin(GL_TRIANGLES);
+    glColor3f(1.0f, 1.0f, 0.0f); // white Color
+    glVertex2f(0.665f, 0.72f);      // Top Center
+    glVertex2f(0.825f, 0.75f);    // Bottom Right
+    glVertex2f(0.68f, 0.6f);     // Bottom Left
+    glEnd();
+
+     //DRAW Wind Mill TRIANGLE_1 Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // white Color
+    glVertex2f(0.665f, 0.72f);      // Top Center
+    glVertex2f(0.825f, 0.75f);    // Bottom Right
+    glVertex2f(0.68f, 0.6f);     // Bottom Left
+    glEnd();
+
+     //DRAW Wind Mill TRIANGLE_2
+    glBegin(GL_TRIANGLES);
+    glColor3f(1.0f, 0.0f, 0.0f); // white Color
+    glVertex2f(0.91f, 0.83f);      // Top Center
+    glVertex2f(0.825f, 0.75f);    // Bottom Right
+    glVertex2f(0.8625f, 0.93f);     // Bottom Left
+    glEnd();
+
+    //DRAW Wind Mill TRIANGLE_2 Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // white Color
+    glVertex2f(0.91f, 0.83f);      // Top Center
+    glVertex2f(0.825f, 0.75f);    // Bottom Right
+    glVertex2f(0.8625f, 0.93f);     // Bottom Left
+    glEnd();
+
+     //DRAW Wind Mill TRIANGLE_3
+    glBegin(GL_TRIANGLES);
+    glColor3f(0.0f, 1.0f, 0.0f); // white Color
+    glVertex2f(0.859f, 0.59f);      // Top Center
+    glVertex2f(0.825f, 0.75f);    // Bottom Right
+    glVertex2f(0.94f, 0.53f);     // Bottom Left
+    glEnd();
+
+     //DRAW Wind Mill TRIANGLE_3 Border
+    glBegin(GL_LINE_LOOP);
+    glColor3f(0.0f, 0.0f, 0.0f); // white Color
+    glVertex2f(0.859f, 0.59f);      // Top Center
+    glVertex2f(0.825f, 0.75f);    // Bottom Right
+    glVertex2f(0.94f, 0.53f);     // Bottom Left
+    glEnd();
+
+    //Forces OpenGL to actually draw all the shapes on the screen.
+	glFlush();  //Forces OpenGL to display everything. It's like saying (Done! Show it!)
+}
+
+/* Main function: GLUT runs as a console application starting at main()  */
+int main(int argc, char** argv) {
+	glutInit(&argc, argv);                 // Initialize GLUT
+    glutInitWindowSize(1020, 1020);   // Set the window's initial width & height
+	glutCreateWindow("Mehedi Hasan Fahim-CSE07908439"); // Create a window with the given title
+
+	glutDisplayFunc(display); // Link display function
+	glutMainLoop();           // They keep doing this until the office closes (program ends).
+	return 0;
+}
