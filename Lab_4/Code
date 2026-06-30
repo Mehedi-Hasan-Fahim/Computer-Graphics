@@ -1,0 +1,130 @@
+// OpenGL libraries
+#include <GL/gl.h>
+#include <GL/glut.h>
+
+// Global variables for object position and speed
+GLfloat position = 0.0f;    // Horizontal position of the object
+GLfloat speed = 0.1f;       // Movement speed (how fast it moves left)
+
+// Function to update the object's position over time
+void update(int value) {
+    // If object moves off the left side of screen, bring it to the right
+    if(position > 1.0)
+        position = -1.0f;
+
+    if(position < -1.0)
+        position = 1.0f;
+    // Move object left by subtracting speed
+    position += speed;
+
+    // Request screen redraw
+    glutPostRedisplay();
+
+    //glutTimerFunc(time_in_ms, function_name, value); GLUT forces us to pass an integer, even if we don’t use it.
+    // Call this update function again after 100 milliseconds
+    glutTimerFunc(200, update, 0);
+}
+
+// Display function: draws the object on screen
+void display() {
+    // Set background color to black
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+    // Clear the color buffer (remove previous frame)
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Save the current transformation state
+
+    glBegin(GL_QUADS);
+        glColor3f(0.0f, 0.0f, 0.2f);       // Set color to blue
+        glVertex2f(-1.0f,-1.0f);
+        glColor3f(0.0f, 0.0f, 0.4f);
+        glVertex2f(1.0f, -1.0f);
+        glColor3f(0.0f, 0.0f, 0.6f);
+        glVertex2f(1.0f, 0.0f);
+        glColor3f(0.0f, 0.0f, 0.8f);
+        glVertex2f(-1.0f,0.0f);
+    glEnd();
+
+    glPushMatrix();
+
+    // Move (translate) object horizontally by 'position'
+    glTranslatef(position, 0.0f, 0.0f);
+
+
+    glBegin(GL_QUADS);
+        glColor3f(1.0f, 0.0f, 0.0f);       // Set color to red
+        glVertex2f(-0.6f, 0.2f);
+        glVertex2f( 0.6f, 0.2f);
+        glVertex2f( 0.39f,  -0.03f);
+        glVertex2f(-0.39f,  -0.03f);
+    glEnd();
+
+    // Draw a blue triangle on the right side (like a rocket nose or wing)
+    glBegin(GL_TRIANGLES);
+        glColor3f(0.0f, 1.0f, 1.0f);       // Set color to blue
+        glVertex2f(0.0f, 0.8f);
+        glVertex2f(0.5f,  0.3f);
+        glVertex2f(-0.5f,  0.3f);
+    glEnd();
+
+     glBegin(GL_LINES);
+        glColor3f(1.0f, 1.0f, 0.0f);       // Set color to yellow
+        glVertex2f(0.0f,0.32f);
+        glVertex2f(0.0f, 0.2f);
+    glEnd();
+
+    // Restore the transformation state
+    glPopMatrix();
+
+    // Send the final image to the screen
+    glFlush();
+}
+
+// Handle mouse click events
+void handleMouse(int button, int state, int x, int y) {
+    // If left mouse button is clicked, increase speed
+    if (button == GLUT_LEFT_BUTTON) {
+        speed -= 0.1f;
+    }
+
+    // If right mouse button is clicked, decrease speed
+    if (button == GLUT_RIGHT_BUTTON) {
+        speed += 0.1f;
+    }
+
+    // Redraw the screen
+    glutPostRedisplay();
+}
+
+// Handle keyboard input (ASCII keys)
+void handleKeypress(unsigned char key, int x, int y) {
+    switch (key) {
+        case 'a':           // Press 'a' to stop movement (speed = 0)
+            speed = 0.0f;
+            break;
+        case 'd':           // Press 'w' to resume speed (reset to 0.1)
+            speed = 0.1f;
+            break;
+    }
+
+    // Redraw the screen
+    glutPostRedisplay();
+}
+
+// Main function - entry point
+int main(int argc, char** argv) {
+    glutInit(&argc, argv);                         // Initialize GLUT
+    glutInitWindowSize(520, 520);                  // Set window size
+    glutInitWindowPosition(50, 50);                // Set window position
+    glutCreateWindow("Translation Animation_Mehedi_Hasan_Fahim_CSE07908439");     // Create window with title
+
+    glutDisplayFunc(display);                      // Set display function
+
+    glutTimerFunc(200, update, 0);                 // Start animation timer
+    glutKeyboardFunc(handleKeypress);              // Handle keyboard input
+    glutMouseFunc(handleMouse);                    // Handle mouse input
+
+    glutMainLoop();                                // Start the event loop
+    return 0;
+}
